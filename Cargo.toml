@@ -10,3 +10,6 @@ toml = "0.8.14"
 redis = "0.25.4"
 serde = {version = "1.0.204", features = ["derive"]}
 serde_json = {version = "1.0.120"}
+lazy_static = "1.5.0"
+strum_macros = "0.26.4"
+strum = "0.26.3"
