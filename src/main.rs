@@ -1,6 +1,8 @@
 use lazy_static::lazy_static;
+use rand::Rng;
 use std::{
     collections::{BTreeMap, HashMap},
+    error::Error,
     fmt::Display,
     fs::{self, File},
     io::Read,
@@ -10,6 +12,25 @@ use strum::IntoEnumIterator;
 use strum_macros::{Display, EnumIter, EnumString};
 
 use serde::{de, Deserialize, Deserializer, Serialize};
+
+#[derive(Debug)]
+struct ServerGroupParsingError {
+    msg: String,
+}
+
+impl Display for ServerGroupParsingError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Error: {}", self.msg)
+    }
+}
+
+impl Error for ServerGroupParsingError {}
+
+impl ServerGroupParsingError {
+    fn new(msg: String) -> Self {
+        ServerGroupParsingError { msg }
+    }
+}
 
 #[derive(Debug)]
 struct Game {
@@ -38,28 +59,145 @@ impl Game {
 #[derive(Clone, Debug)]
 struct GameOptions {
     prefix: String,
+    staff_only: bool,
+    whitelist: bool,
+    host: Option<String>,
+    min_players: u8,
+    max_players: u8,
+    port_section: u16,
+    arcade_group: bool,
+    world_zip: String,
+    plugin: String,
+    config_path: String,
+    pvp: bool,
+    tournament: bool,
+    tournament_points: bool,
+    games: Option<String>,
+    server_type: String,
+    add_no_cheat: bool,
+    add_world_edit: bool,
+    team_rejoin: bool,
+    team_auto_join: bool,
+    team_force_balance: bool,
+    game_auto_start: bool,
+    game_timeout: bool,
+    game_voting: bool,
+    map_voting: bool,
+    reward_gems: bool,
+    reward_items: bool,
+    reward_stats: bool,
+    reward_achievements: bool,
+    hotbar_inventory: bool,
+    hotbar_hub_clock: bool,
+    player_kick_idle: bool,
     team_server: Option<GameType>,
     booster_group: Option<BoosterGroup>,
     npc_name: Option<String>,
-    min_players: u8,
-    max_players: u8,
+    resource_pack: Option<String>,
+    region: Region,
+    portal_bottom_corner_location: Option<String>,
+    portal_top_corner_location: Option<String>,
 }
 
 impl GameOptions {
     fn from(game: &GameType) -> Self {
-        let (min_players, max_players) = GAME_TO_PLAYER_COUNT.get(game).cloned().unwrap_or((8, 16));
+        let binding = Self::load_from_cache(game);
+        let cached = binding.as_ref();
+        let (min_players, max_players) = cached.map_or(
+            GAME_TO_PLAYER_COUNT.get(game).cloned().unwrap_or((8, 16)),
+            |data| (data.min_players, data.max_players),
+        );
         Self {
             prefix: GAME_TO_SERVER_PREFIX
                 .get(game)
                 .cloned()
                 .unwrap_or_default()
                 .into(),
-            team_server: GAME_TO_TEAM_SERVER.get(game).cloned(),
-            booster_group: GAME_TO_BOOSTER_GROUP.get(game).cloned(),
-            npc_name: GAME_TO_NPC.get(game).cloned().map(|x| x.to_string()),
+            staff_only: cached.map_or(false, |data| data.staff_only),
+            whitelist: cached.map_or(false, |data| data.whitelist),
+            host: cached
+                .and_then(|data| data.host.clone())
+                .filter(|x| !x.is_empty()),
             min_players,
             max_players,
+            port_section: cached.map_or(Self::rnd_port(), |data| data.port_section), // make unique
+            arcade_group: cached.map_or(true, |data| data.arcade_group),
+            world_zip: cached.map_or("arcade.zip".into(), |data| data.world_zip.clone()),
+            plugin: cached.map_or("Arcade.jar".into(), |data| data.plugin.clone()),
+            config_path: cached.map_or("plugins/Arcade".into(), |data| data.config_path.clone()),
+            pvp: cached.map_or(true, |data| data.pvp),
+            tournament: cached.map_or(false, |data| data.tournament),
+            tournament_points: cached.map_or(false, |data| data.tournament_points),
+            games: cached.map_or(
+                match Some(game) {
+                    Some(GameType::MixedArcade) => Some(
+                        GameType::iter()
+                            .take(7)
+                            .fold(String::new(), |a, b| {
+                                if a.is_empty() {
+                                    b.to_string()
+                                } else {
+                                    format!("{},{}", a, b)
+                                }
+                            })
+                            .to_string(),
+                    ),
+                    Some(g) => Some(g.to_string()),
+                    None => None,
+                },
+                |data| data.games.clone().filter(|x| !x.is_empty() && x != "null"),
+            ),
+            server_type: cached.map_or("Minigames".into(), |data| data.server_type.clone()),
+            add_no_cheat: cached.map_or(true, |data| data.add_no_cheat),
+            add_world_edit: cached.map_or(false, |data| data.add_world_edit),
+            team_rejoin: cached.map_or(false, |data| data.team_rejoin),
+            team_auto_join: cached.map_or(true, |data| data.team_auto_join),
+            team_force_balance: cached.map_or(false, |data| data.team_force_balance),
+            game_auto_start: cached.map_or(true, |data| data.game_auto_start),
+            game_timeout: cached.map_or(true, |data| data.game_timeout),
+            game_voting: cached.map_or(false, |data| data.game_voting),
+            map_voting: cached.map_or(true, |data| data.map_voting),
+            reward_gems: cached.map_or(true, |data| data.reward_gems),
+            reward_items: cached.map_or(true, |data| data.reward_items),
+            reward_stats: cached.map_or(true, |data| data.reward_stats),
+            reward_achievements: cached.map_or(true, |data| data.reward_achievements),
+            hotbar_inventory: cached.map_or(true, |data| data.hotbar_inventory),
+            hotbar_hub_clock: cached.map_or(true, |data| data.hotbar_hub_clock),
+            player_kick_idle: cached.map_or(true, |data| data.player_kick_idle),
+            team_server: cached.map_or(GAME_TO_TEAM_SERVER.get(game).cloned(), |data| {
+                SERVER_PREFIX_TO_GAME
+                    .get(&data.team_server_key.clone()?.as_ref())
+                    .cloned()
+            }),
+            booster_group: cached.map_or(GAME_TO_BOOSTER_GROUP.get(game).cloned(), |data| {
+                BoosterGroup::from_str(data.booster_group.clone()?.as_ref()).ok()
+            }),
+            npc_name: cached.map_or(
+                GAME_TO_NPC.get(game).cloned().map(|x| x.to_string()),
+                |data| data.npc_name.clone().filter(|x| !x.is_empty()),
+            ),
+            resource_pack: cached
+                .and_then(|data| data.resource_pack.clone())
+                .filter(|x| !x.is_empty()),
+            region: cached.map_or(Region::US, |data| data.region.clone()),
+            portal_bottom_corner_location: cached
+                .and_then(|data| data.portal_bottom_corner_location.clone())
+                .filter(|x| !x.is_empty()),
+            portal_top_corner_location: cached
+                .and_then(|data| data.portal_top_corner_location.clone())
+                .filter(|x| !x.is_empty()),
         }
+    }
+
+    fn rnd_port() -> u16 {
+        let mut rng = rand::thread_rng();
+        rng.gen_range(25565..26001)
+    }
+
+    fn load_from_cache(game: &GameType) -> Option<ServerGroup> {
+        let prefix = GAME_TO_SERVER_PREFIX.get(game).cloned()?;
+        println!("Getting: servergroups.{}", prefix);
+        get_server_group(&format!("servergroups.{}", prefix)).ok()
     }
 }
 
@@ -189,6 +327,29 @@ lazy_static! {
         (GameType::Clans, "Clans"),
         (GameType::ClansHub, "ClansHub"),
     ]);
+    static ref SERVER_PREFIX_TO_GAME: HashMap<&'static str, GameType> = HashMap::from([
+        ("MB", GameType::Micro),
+        ("MIN", GameType::MixedArcade),
+        ("DMT", GameType::Draw),
+        ("BLD", GameType::Build),
+        ("TF", GameType::TurfWars),
+        ("SB", GameType::SpeedBuilders),
+        ("BH", GameType::HideSeek),
+        ("CW2", GameType::CakeWarsDuos),
+        ("CW4", GameType::CakeWars4),
+        ("HG", GameType::SurvivalGames),
+        ("SG2", GameType::SurvivalGamesTeams),
+        ("SKY", GameType::Skywars),
+        ("SKY2", GameType::SkywarsTeams),
+        ("BR", GameType::Bridges),
+        ("MS", GameType::MineStrike),
+        ("SSM", GameType::Smash),
+        ("SSM2", GameType::SmashTeams),
+        ("DOM", GameType::ChampionsDOM),
+        ("CTF", GameType::ChampionsCTF),
+        ("Clans", GameType::Clans),
+        ("ClansHub", GameType::ClansHub),
+    ]);
     static ref GAME_TO_TEAM_SERVER: HashMap<GameType, GameType> = HashMap::from([
         (GameType::Skywars, GameType::SkywarsTeams),
         (GameType::SurvivalGames, GameType::SurvivalGamesTeams),
@@ -198,7 +359,7 @@ lazy_static! {
     ]);
 }
 
-#[derive(Clone, Copy, Debug, Display)]
+#[derive(Clone, Copy, Debug, Display, EnumString)]
 #[allow(non_camel_case_types)]
 enum BoosterGroup {
     Arcade,
@@ -215,7 +376,7 @@ enum BoosterGroup {
     Champions,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 enum Region {
     US,
     EU,
@@ -262,7 +423,7 @@ struct ServerGroup {
     tournament_points: bool,
     #[serde(default, deserialize_with = "to_bool")]
     hard_max_player_cap: bool,
-    games: String,
+    games: Option<String>,
     modes: Option<String>,
     booster_group: Option<String>,
     server_type: String,
@@ -352,6 +513,65 @@ where
     }
 }
 
+impl From<Game> for ServerGroup {
+    fn from(game: Game) -> Self {
+        Self {
+            name: game.options.prefix.clone(),
+            prefix: game.options.prefix,
+            ram: 512,
+            cpu: 1,
+            total_servers: 0,
+            joinable_servers: 0,
+            port_section: game.options.port_section,
+            uptimes: None,
+            arcade_group: game.options.arcade_group,
+            world_zip: game.options.world_zip,
+            plugin: game.options.plugin,
+            config_path: game.options.config_path,
+            host: game.options.host,
+            min_players: game.options.min_players,
+            max_players: game.options.max_players,
+            pvp: game.options.pvp,
+            tournament: game.options.tournament,
+            tournament_points: game.options.tournament_points,
+            hard_max_player_cap: false,
+            games: game.options.games,
+            modes: None,
+            booster_group: game.options.booster_group.map(|b| b.to_string()),
+            server_type: game.options.server_type,
+            add_no_cheat: game.options.add_no_cheat,
+            add_world_edit: game.options.add_world_edit,
+            team_rejoin: game.options.team_rejoin,
+            team_auto_join: game.options.team_auto_join,
+            team_force_balance: game.options.team_force_balance,
+            game_auto_start: game.options.game_auto_start,
+            game_timeout: game.options.game_timeout,
+            game_voting: game.options.game_voting,
+            map_voting: game.options.map_voting,
+            reward_gems: game.options.reward_gems,
+            reward_items: game.options.reward_items,
+            reward_stats: game.options.reward_stats,
+            reward_achievements: game.options.reward_achievements,
+            hotbar_inventory: game.options.hotbar_inventory,
+            hotbar_hub_clock: game.options.hotbar_hub_clock,
+            player_kick_idle: game.options.player_kick_idle,
+            staff_only: game.options.staff_only,
+            whitelist: game.options.whitelist,
+            resource_pack: game.options.resource_pack,
+            region: game.options.region,
+            team_server_key: game.options.team_server.and_then(|serv| {
+                GAME_TO_SERVER_PREFIX
+                    .get(&serv)
+                    .cloned()
+                    .and_then(|g| Some(g.to_string()))
+            }),
+            portal_top_corner_location: game.options.portal_top_corner_location,
+            portal_bottom_corner_location: game.options.portal_bottom_corner_location,
+            npc_name: game.options.npc_name,
+        }
+    }
+}
+
 #[derive(Deserialize, Serialize, Debug)]
 struct Config {
     redis_conn: RedisConfig,
@@ -410,20 +630,29 @@ fn connect(config: &Config) -> redis::Connection {
     .expect("Redis client could not be opened.")
 }
 
-fn main() {
+fn get_server_group(redis_key: &String) -> Result<ServerGroup, ServerGroupParsingError> {
     let config: Config = Config::get_config();
-    dbg!(&config);
     let mut conn = connect(&config);
     let output: BTreeMap<String, String> = redis::cmd("HGETALL")
-        .arg("servergroups.Lobby")
+        .arg(redis_key)
         .query(&mut conn)
-        .expect("Redis data for ServerGroup should have been found");
+        .map_err(|_| {
+            ServerGroupParsingError::new("Redis data for ServerGroup could not be retrieved".into())
+        })?;
     if output.is_empty() {
-        return println!("Redis data not found");
+        return Err(ServerGroupParsingError::new("ServerGroup is empty".into()));
     }
-    let sg_str = serde_json::to_string(&output).unwrap();
-    let sg: ServerGroup = serde_json::from_str(&sg_str).unwrap();
-    dbg!(&sg);
-    dbg!(Game::from(&GameType::MixedArcade));
-    //GameType::iter().for_each(|g| println!("{:?}", Game::from(&g)));
+    let sg_str = serde_json::to_string(&output).map_err(|_| {
+        ServerGroupParsingError::new(format!("Could not serialize: {:?} from redis", redis_key))
+    })?;
+    serde_json::from_str(&sg_str).map_err(|_| {
+        ServerGroupParsingError::new(format!(
+            "Could not deserialize redis data for {:?}",
+            redis_key
+        ))
+    })
+}
+
+fn main() {
+    dbg!(ServerGroup::from(Game::from(&GameType::CakeWarsDuos)));
 }
