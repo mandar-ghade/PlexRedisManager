@@ -1,7 +1,7 @@
 use lazy_static::lazy_static;
 use rand::Rng;
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::HashMap,
     error::Error,
     fmt::Display,
     fs::{self, File},
@@ -12,6 +12,12 @@ use strum::IntoEnumIterator;
 use strum_macros::{Display, EnumIter, EnumString};
 
 use serde::{de, Deserialize, Deserializer, Serialize};
+
+enum GenericServer {
+    Lobby,
+    ClansHub,
+    BetaHub,
+}
 
 #[derive(Debug)]
 struct ServerGroupParsingError {
@@ -190,8 +196,19 @@ impl GameOptions {
     }
 
     fn rnd_port() -> u16 {
+        // returns non-conflicting port section
         let mut rng = rand::thread_rng();
-        rng.gen_range(25565..26001)
+        let ports = get_cached_port_sections().unwrap_or(Vec::new());
+        let mut port: u16 = rng.gen_range(25565..26001);
+        while ports.iter().any(|&cached_port| {
+            (port < cached_port && cached_port < port + 10) // cache conflicts with NEW.
+                | (cached_port < port && port <= cached_port + 10) // OR NEW conflicts with cache
+        })
+        // port section conflict (either can be 10 above the other)
+        {
+            port = rng.gen_range(25565..26001);
+        }
+        port
     }
 
     fn load_from_cache(game: &GameType) -> Option<ServerGroup> {
@@ -240,6 +257,10 @@ enum GameType {
     Spleef,
     SquidShooters,
     WitherAssault,
+}
+
+struct Games {
+    data: Vec<GameType>,
 }
 
 lazy_static! {
@@ -429,13 +450,13 @@ struct ServerGroup {
     server_type: String,
     #[serde(deserialize_with = "to_bool")]
     add_no_cheat: bool,
-    #[serde(deserialize_with = "to_bool")]
+    #[serde(default, deserialize_with = "to_bool")]
     add_world_edit: bool,
     #[serde(deserialize_with = "to_bool")]
     team_rejoin: bool,
-    #[serde(deserialize_with = "to_bool")]
+    #[serde(default, deserialize_with = "to_bool")]
     team_auto_join: bool,
-    #[serde(deserialize_with = "to_bool")]
+    #[serde(default, deserialize_with = "to_bool")]
     team_force_balance: bool,
     #[serde(deserialize_with = "to_bool")]
     game_auto_start: bool,
@@ -630,10 +651,58 @@ fn connect(config: &Config) -> redis::Connection {
     .expect("Redis client could not be opened.")
 }
 
+#[allow(dead_code)]
+fn get_port(group: &String, conn: &mut redis::Connection) -> Result<u16, ServerGroupParsingError> {
+    let res: u16 = redis::cmd("HGET")
+        .arg(group)
+        .arg("portSection")
+        .query(conn)
+        .map_err(|_| {
+            ServerGroupParsingError::new(
+                "Redis data for ServerGroup could not be retrieved.".into(),
+            )
+        })?;
+    Ok(res)
+}
+
+#[allow(dead_code)]
+fn get_ports(groups: Vec<String>) -> Result<Vec<u16>, ServerGroupParsingError> {
+    let config: Config = Config::get_config();
+    let mut conn = connect(&config);
+    groups.iter().map(|sg| get_port(sg, &mut conn)).collect()
+}
+
+fn get_server_groups() -> Result<Vec<ServerGroup>, ServerGroupParsingError> {
+    let config: Config = Config::get_config();
+    let mut conn = connect(&config);
+    let server_groups: Vec<String> = redis::cmd("KEYS")
+        .arg("servergroups.*")
+        .query(&mut conn)
+        .map_err(|_| {
+            ServerGroupParsingError::new(
+                "Redis data for ServerGroup could not be retrieved. ServerGroup iteration failed."
+                    .into(),
+            )
+        })?;
+    server_groups
+        .iter()
+        .map(|sg| get_server_group(sg))
+        .collect()
+}
+
+fn get_cached_port_sections() -> Result<Vec<u16>, ServerGroupParsingError> {
+    let server_groups: Vec<ServerGroup> = get_server_groups()?;
+    let ports: Vec<u16> = server_groups
+        .iter()
+        .map(|group| group.port_section)
+        .collect();
+    Ok(ports)
+}
+
 fn get_server_group(redis_key: &String) -> Result<ServerGroup, ServerGroupParsingError> {
     let config: Config = Config::get_config();
     let mut conn = connect(&config);
-    let output: BTreeMap<String, String> = redis::cmd("HGETALL")
+    let output: HashMap<String, String> = redis::cmd("HGETALL")
         .arg(redis_key)
         .query(&mut conn)
         .map_err(|_| {
@@ -645,14 +714,16 @@ fn get_server_group(redis_key: &String) -> Result<ServerGroup, ServerGroupParsin
     let sg_str = serde_json::to_string(&output).map_err(|_| {
         ServerGroupParsingError::new(format!("Could not serialize: {:?} from redis", redis_key))
     })?;
-    serde_json::from_str(&sg_str).map_err(|_| {
+    serde_json::from_str(&sg_str).map_err(|err| {
         ServerGroupParsingError::new(format!(
-            "Could not deserialize redis data for {:?}",
-            redis_key
+            "Could not deserialize redis data for {:?}, Err message: {:?}",
+            redis_key, err
         ))
     })
 }
 
 fn main() {
-    dbg!(ServerGroup::from(Game::from(&GameType::CakeWarsDuos)));
+    dbg!(ServerGroup::from(Game::from(&GameType::Lobbers)));
+    //let ports: Result<Vec<u16>, ServerGroupParsingError> = get_cached_port_sections();
+    //dbg!(ports);
 }
