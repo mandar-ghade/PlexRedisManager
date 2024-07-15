@@ -679,6 +679,11 @@ impl TryFrom<&str> for ServerGroup {
 impl TryFrom<HashMap<String, String>> for ServerGroup {
     type Error = ServerGroupParsingError;
     fn try_from(map: HashMap<String, String>) -> Result<Self, Self::Error> {
+        if map.is_empty() {
+            return Err(ServerGroupParsingError::new(
+                "ServerGroup not found.".into(),
+            ));
+        }
         let name = map
             .get("name")
             .ok_or(ServerGroupParsingError::new(
@@ -844,7 +849,7 @@ fn get_server_group(redis_key: &String) -> Result<ServerGroup, ServerGroupParsin
 }
 
 fn main() {
-    dbg!(ServerGroup::try_from("Testing"));
+    dbg!(ServerGroup::try_from("aDADad"));
     //dbg!(ServerGroup::from(Game::from(&GameType::ChampionsDominate)));
     //let ports: Result<Vec<u16>, ServerGroupParsingError> = get_all_port_sections();
     //dbg!(ports);
