@@ -602,7 +602,7 @@ fn parse_value<'a>(
     Ok(map
         .get(key)
         .ok_or(ServerGroupParsingError::new(format!(
-            "servergroups.{}  {:?} could not be found.",
+            "servergroups.{} {:?} could not be found.",
             prefix, key
         )))?
         .to_string())
@@ -730,7 +730,8 @@ impl TryFrom<HashMap<String, String>> for ServerGroup {
             staff_only: parse_bool_or_default(&prefix, &map, "staffOnly")?,
             whitelist: parse_bool_or_default(&prefix, &map, "whitelist")?,
             resource_pack: parse_optional_str(&map, "resourcePack")?,
-            region: Region::try_from(parse_value(&prefix, &map, "region")?).map_err(|err| {
+            region: Region::try_from(parse_value(&prefix, &map, "region").unwrap_or("US".into()))
+                .map_err(|err| {
                 ServerGroupParsingError::new(format!(
                     "servergroups.{} {:?}: {:?}",
                     &prefix, "region", err
@@ -843,7 +844,7 @@ fn get_server_group(redis_key: &String) -> Result<ServerGroup, ServerGroupParsin
 }
 
 fn main() {
-    dbg!(ServerGroup::try_from("DOM").ok());
+    dbg!(ServerGroup::try_from("Testing"));
     //dbg!(ServerGroup::from(Game::from(&GameType::ChampionsDominate)));
     //let ports: Result<Vec<u16>, ServerGroupParsingError> = get_all_port_sections();
     //dbg!(ports);
