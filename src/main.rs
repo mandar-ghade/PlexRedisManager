@@ -666,7 +666,10 @@ fn parse_optional_str<'a>(
     map: &HashMap<String, String>,
     key: &'a str,
 ) -> Result<Option<String>, ServerGroupParsingError> {
-    Ok(map.get(key).cloned())
+    Ok(map
+        .get(key)
+        .filter(|x| !x.is_empty() && x.as_str() != "null")
+        .cloned())
 }
 
 impl TryFrom<&str> for ServerGroup {
@@ -849,7 +852,7 @@ fn get_server_group(redis_key: &String) -> Result<ServerGroup, ServerGroupParsin
 }
 
 fn main() {
-    dbg!(ServerGroup::try_from("aDADad"));
+    dbg!(ServerGroup::try_from("Testing"));
     //dbg!(ServerGroup::from(Game::from(&GameType::ChampionsDominate)));
     //let ports: Result<Vec<u16>, ServerGroupParsingError> = get_all_port_sections();
     //dbg!(ports);
