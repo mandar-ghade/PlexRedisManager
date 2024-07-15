@@ -1,4 +1,3 @@
-use convert_case::{Case, Casing};
 use lazy_static::lazy_static;
 use rand::Rng;
 use std::{
@@ -838,7 +837,7 @@ fn get_server_group(redis_key: &String) -> Result<ServerGroup, ServerGroupParsin
 }
 
 fn main() {
-    dbg!(ServerGroup::try_from("MIN").ok());
+    dbg!(ServerGroup::try_from("DOM").ok());
     //dbg!(ServerGroup::from(Game::from(&GameType::ChampionsDominate)));
     //let ports: Result<Vec<u16>, ServerGroupParsingError> = get_all_port_sections();
     //dbg!(ports);
