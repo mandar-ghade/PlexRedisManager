@@ -13,6 +13,7 @@ use strum_macros::{Display, EnumIter, EnumString};
 
 use serde::{Deserialize, Serialize};
 
+#[allow(dead_code)]
 enum GenericServer {
     Lobby,
     ClansHub,
@@ -40,11 +41,13 @@ impl ServerGroupParsingError {
 
 #[derive(Debug)]
 struct Game {
+    #[allow(dead_code)]
     name: GameType,
     options: GameOptions,
 }
 
 impl Game {
+    #[allow(dead_code)]
     fn from_str(game: &str) -> Option<Self> {
         if let Some(game_name) = GameType::from_str(game).ok() {
             Self {
@@ -54,6 +57,7 @@ impl Game {
         }
         None
     }
+    #[allow(dead_code)]
     fn from(game: &GameType) -> Self {
         Self {
             name: *game,
@@ -313,6 +317,7 @@ enum GameType {
     ZombieSurvival,
 }
 
+#[allow(dead_code)]
 struct Games {
     data: Vec<GameType>,
 }
@@ -478,6 +483,7 @@ impl TryFrom<String> for Region {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug)]
 struct ServerGroup {
     name: String,
