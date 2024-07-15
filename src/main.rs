@@ -46,23 +46,25 @@ struct Game {
     options: GameOptions,
 }
 
-impl Game {
-    #[allow(dead_code)]
-    fn from_str(game: &str) -> Option<Self> {
-        if let Some(game_name) = GameType::from_str(game).ok() {
-            Self {
-                name: game_name,
-                options: GameOptions::from(&game_name),
-            };
-        }
-        None
+impl TryFrom<GameType> for Game {
+    type Error = ServerGroupParsingError;
+    fn try_from(game: GameType) -> Result<Self, Self::Error> {
+        Ok(Self {
+            name: game,
+            options: GameOptions::try_from(game)?,
+        })
     }
-    #[allow(dead_code)]
-    fn from(game: &GameType) -> Self {
-        Self {
-            name: *game,
-            options: GameOptions::from(&game),
-        }
+}
+
+impl TryFrom<&str> for Game {
+    type Error = ServerGroupParsingError;
+    fn try_from(game: &str) -> Result<Self, Self::Error> {
+        let game_name = GameType::from_str(game)
+            .map_err(|err| ServerGroupParsingError::new(format!("Game not found: {:?}", err)))?;
+        Ok(Self {
+            name: game_name,
+            options: GameOptions::try_from(game_name)?,
+        })
     }
 }
 
@@ -109,17 +111,25 @@ struct GameOptions {
     portal_top_corner_location: Option<String>,
 }
 
-impl GameOptions {
-    fn from(game: &GameType) -> Self {
-        let binding = Self::load_from_cache(game);
-        let cached = binding.as_ref();
+impl TryFrom<GameType> for GameOptions {
+    type Error = ServerGroupParsingError;
+    fn try_from(game: GameType) -> Result<Self, Self::Error> {
+        let binding = Self::load_from_cache(&game);
+        let cached: Option<&ServerGroup> = binding.as_ref();
+        if let Some(options) = CUSTOM_GAME_OPTIONS.get(&game) {
+            if cached.is_none() {
+                let mut new = options.clone();
+                new.port_section = Self::rnd_port()?;
+                return Ok(new);
+            }
+        }
         let (min_players, max_players) = cached.map_or(
-            GAME_TO_PLAYER_COUNT.get(game).cloned().unwrap_or((8, 16)),
+            GAME_TO_PLAYER_COUNT.get(&game).cloned().unwrap_or((8, 16)),
             |data| (data.min_players, data.max_players),
         );
-        Self {
+        Ok(Self {
             prefix: GAME_TO_SERVER_PREFIX
-                .get(game)
+                .get(&game)
                 .cloned()
                 .unwrap_or_default()
                 .into(),
@@ -130,7 +140,7 @@ impl GameOptions {
                 .filter(|x| !x.is_empty()),
             min_players,
             max_players,
-            port_section: cached.map_or(Self::rnd_port(), |data| data.port_section), // make unique
+            port_section: cached.map_or(Self::rnd_port()?, |data| data.port_section), // makes unique
             arcade_group: cached.map_or(true, |data| data.arcade_group),
             world_zip: cached.map_or("arcade.zip".into(), |data| data.world_zip.clone()),
             plugin: cached.map_or("Arcade.jar".into(), |data| data.plugin.clone()),
@@ -174,16 +184,16 @@ impl GameOptions {
             hotbar_inventory: cached.map_or(true, |data| data.hotbar_inventory),
             hotbar_hub_clock: cached.map_or(true, |data| data.hotbar_hub_clock),
             player_kick_idle: cached.map_or(true, |data| data.player_kick_idle),
-            team_server: cached.map_or(GAME_TO_TEAM_SERVER.get(game).cloned(), |data| {
+            team_server: cached.map_or(GAME_TO_TEAM_SERVER.get(&game).cloned(), |data| {
                 SERVER_PREFIX_TO_GAME
                     .get(&data.team_server_key.clone()?.as_ref())
                     .cloned()
             }),
-            booster_group: cached.map_or(GAME_TO_BOOSTER_GROUP.get(game).cloned(), |data| {
+            booster_group: cached.map_or(GAME_TO_BOOSTER_GROUP.get(&game).cloned(), |data| {
                 BoosterGroup::from_str(data.booster_group.clone()?.as_ref()).ok()
             }),
             npc_name: cached.map_or(
-                GAME_TO_NPC.get(game).cloned().map(|x| x.to_string()),
+                GAME_TO_NPC.get(&game).cloned().map(|x| x.to_string()),
                 |data| data.npc_name.clone().filter(|x| !x.is_empty()),
             ),
             resource_pack: cached
@@ -196,13 +206,15 @@ impl GameOptions {
             portal_top_corner_location: cached
                 .and_then(|data| data.portal_top_corner_location.clone())
                 .filter(|x| !x.is_empty()),
-        }
+        })
     }
+}
 
-    fn rnd_port() -> u16 {
+impl GameOptions {
+    fn rnd_port() -> Result<u16, ServerGroupParsingError> {
         // returns non-conflicting port section
         let mut rng = rand::thread_rng();
-        let ports = get_all_port_sections().unwrap_or(Vec::new());
+        let ports = get_all_port_sections()?;
         let mut port: u16 = rng.gen_range(25565..26001);
         while ports.iter().any(|&cached_port| {
             (port < cached_port && cached_port < port + 10) // cache conflicts with NEW.
@@ -212,7 +224,7 @@ impl GameOptions {
         {
             port = rng.gen_range(25565..26001);
         }
-        port
+        Ok(port)
     }
 
     fn load_from_cache(game: &GameType) -> Option<ServerGroup> {
@@ -302,6 +314,7 @@ enum GameType {
     Paintball,
     Quiver,
     QuiverTeams,
+    Retro,
     Runner,
     SearchAndDestroy,
     Sheep,
@@ -359,7 +372,8 @@ lazy_static! {
         (GameType::Smash, BoosterGroup::Smash_Mobs),
         (GameType::SmashTeams, BoosterGroup::Smash_Mobs),
         (GameType::ChampionsDominate, BoosterGroup::Champions),
-        (GameType::ChampionsCTF, BoosterGroup::Champions)
+        (GameType::ChampionsCTF, BoosterGroup::Champions),
+        (GameType::NanoGames, BoosterGroup::Nano_Games)
     ]);
     static ref GAME_TO_PLAYER_COUNT: HashMap<GameType, (u8, u8)> = HashMap::from([
         (GameType::Micro, (8, 16)),
@@ -406,6 +420,8 @@ lazy_static! {
         (GameType::ChampionsCTF, "CTF"),
         (GameType::Clans, "Clans"),
         (GameType::ClansHub, "ClansHub"),
+        (GameType::NanoGames, "NANO"),
+        (GameType::Retro, "RETRO")
     ]);
     static ref SERVER_PREFIX_TO_GAME: HashMap<&'static str, GameType> = HashMap::from([
         ("MB", GameType::Micro),
@@ -429,6 +445,8 @@ lazy_static! {
         ("CTF", GameType::ChampionsCTF),
         ("Clans", GameType::Clans),
         ("ClansHub", GameType::ClansHub),
+        ("NANO", GameType::NanoGames),
+        ("RETRO", GameType::Retro)
     ]);
     static ref GAME_TO_TEAM_SERVER: HashMap<GameType, GameType> = HashMap::from([
         (GameType::Skywars, GameType::SkywarsTeams),
@@ -436,6 +454,96 @@ lazy_static! {
         (GameType::Smash, GameType::SmashTeams),
         (GameType::ChampionsDominate, GameType::ChampionsCTF),
         (GameType::CakeWars4, GameType::CakeWarsDuos),
+    ]);
+    static ref CUSTOM_GAME_OPTIONS: HashMap<GameType, GameOptions> = HashMap::from([
+        (
+            GameType::Clans,
+            GameOptions {
+                prefix: "Clans".to_string(),
+                staff_only: false,
+                whitelist: false,
+                host: None,
+                min_players: 1,
+                max_players: 50,
+                port_section: 25565, // changes automatically
+                arcade_group: false,
+                world_zip: "clans.zip".to_string(),
+                plugin: "Clans.jar".to_string(),
+                config_path: "plugins/Clans".to_string(),
+                pvp: false,
+                tournament: false,
+                tournament_points: false,
+                games: None,
+                server_type: "dedicated".to_string(),
+                add_no_cheat: false,
+                add_world_edit: true,
+                team_rejoin: false,
+                team_auto_join: false,
+                team_force_balance: false,
+                game_auto_start: false,
+                game_timeout: true,
+                game_voting: false,
+                map_voting: false,
+                reward_gems: true,
+                reward_items: true,
+                reward_stats: true,
+                reward_achievements: true,
+                hotbar_inventory: false,
+                hotbar_hub_clock: true,
+                player_kick_idle: false,
+                team_server: None,
+                booster_group: None,
+                npc_name: Some("Clans".to_string()),
+                resource_pack: None,
+                region: Region::US,
+                portal_bottom_corner_location: None,
+                portal_top_corner_location: None
+            }
+        ),
+        (
+            GameType::ClansHub,
+            GameOptions {
+                prefix: "ClansHub".to_string(),
+                staff_only: false,
+                whitelist: false,
+                host: None,
+                min_players: 1,
+                max_players: 50,
+                port_section: 25565, // changes automatically
+                arcade_group: false,
+                world_zip: "clanshub.zip".to_string(),
+                plugin: "ClansHub.jar".to_string(),
+                config_path: "plugins/ClansHub".to_string(),
+                pvp: false,
+                tournament: false,
+                tournament_points: false,
+                games: None,
+                server_type: "dedicated".to_string(),
+                add_no_cheat: false,
+                add_world_edit: true,
+                team_rejoin: false,
+                team_auto_join: false,
+                team_force_balance: false,
+                game_auto_start: false,
+                game_timeout: true,
+                game_voting: true,
+                map_voting: true,
+                reward_gems: true,
+                reward_items: true,
+                reward_stats: true,
+                reward_achievements: true,
+                hotbar_inventory: false,
+                hotbar_hub_clock: true,
+                player_kick_idle: true,
+                team_server: None,
+                booster_group: None,
+                npc_name: Some("Clans".to_string()),
+                resource_pack: None,
+                region: Region::US,
+                portal_bottom_corner_location: None,
+                portal_top_corner_location: None,
+            },
+        )
     ]);
 }
 
@@ -454,6 +562,7 @@ enum BoosterGroup {
     MineStrike,
     Smash_Mobs,
     Champions,
+    Nano_Games,
 }
 
 #[derive(Clone, Debug)]
@@ -807,9 +916,9 @@ fn connect(config: &Config) -> redis::Connection {
         "redis://{}:{}",
         config.redis_conn.address, config.redis_conn.port
     ))
-    .expect("Redis connection could not be made.")
+    .expect("Redis connection could not be made")
     .get_connection()
-    .expect("Redis client could not be opened.")
+    .expect("Redis client could not be opened")
 }
 
 fn get_server_groups() -> Result<Vec<ServerGroup>, ServerGroupParsingError> {
@@ -852,8 +961,8 @@ fn get_server_group(redis_key: &String) -> Result<ServerGroup, ServerGroupParsin
 }
 
 fn main() {
-    dbg!(ServerGroup::try_from("Testing"));
-    //dbg!(ServerGroup::from(Game::from(&GameType::ChampionsDominate)));
+    let clans_hub = Game::try_from(GameType::ClansHub);
+    dbg!(clans_hub);
     //let ports: Result<Vec<u16>, ServerGroupParsingError> = get_all_port_sections();
     //dbg!(ports);
 }
