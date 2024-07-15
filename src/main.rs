@@ -1,3 +1,4 @@
+use convert_case::{Case, Casing};
 use lazy_static::lazy_static;
 use rand::Rng;
 use std::{
@@ -11,7 +12,7 @@ use std::{
 use strum::IntoEnumIterator;
 use strum_macros::{Display, EnumIter, EnumString};
 
-use serde::{de, Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 
 enum GenericServer {
     Lobby,
@@ -198,7 +199,7 @@ impl GameOptions {
     fn rnd_port() -> u16 {
         // returns non-conflicting port section
         let mut rng = rand::thread_rng();
-        let ports = get_cached_port_sections().unwrap_or(Vec::new());
+        let ports = get_all_port_sections().unwrap_or(Vec::new());
         let mut port: u16 = rng.gen_range(25565..26001);
         while ports.iter().any(|&cached_port| {
             (port < cached_port && cached_port < port + 10) // cache conflicts with NEW.
@@ -213,19 +214,29 @@ impl GameOptions {
 
     fn load_from_cache(game: &GameType) -> Option<ServerGroup> {
         let prefix = GAME_TO_SERVER_PREFIX.get(game).cloned()?;
-        println!("Getting: servergroups.{}", prefix);
         get_server_group(&format!("servergroups.{}", prefix)).ok()
     }
 }
 
 #[derive(Clone, Copy, Debug, Display, PartialEq, Eq, Hash, EnumString, EnumIter)]
 enum GameType {
+    // synonymous for GameDisplay in Mineplex's code
     Micro,
     MixedArcade,
+    Cards,
     Draw,
     Build,
+    BuildMavericks,
+    Tug,
     TurfWars,
+    UHC,
+    UHCSolo,
+    UHCSoloSpeed,
+    UHCTeamsSpeed,
     SpeedBuilders,
+    Valentines,
+    Skyfall,
+    SkyfallTeams,
     HideSeek,
     CakeWarsDuos,
     CakeWars4,
@@ -233,30 +244,74 @@ enum GameType {
     SurvivalGamesTeams,
     Skywars,
     SkywarsTeams,
+    MonsterMaze,
+    MonsterLeague,
     Bridges,
     MineStrike,
     Smash,
+    SmashDominate,
     SmashTeams,
-    ChampionsDOM,
+    SmashTraining,
     ChampionsCTF,
+    BouncyBalls,
+    Gladiators,
+    TypeWars,
+    ChampionsDominate,
+    ChampionsTDM,
+    Christmas,
+    ChristmasNew,
     Clans,
     ClansHub,
     BaconBrawl,
-    Lobbers,
+    Barbarians,
+    Basketball,
+    QuiverPayload,
+    StrikeGames,
+    AlienInvasion,
+    MOBA,
+    MOBATraining,
+    BattleRoyale,
+    BossBattles,
+    BawkBawkBattles,
+    Brawl, // Event
+    CastleAssault,
+    CastleAssaultTDM,
+    CastleSiege,
     DeathTag,
     DragonEscape,
+    DragonEscapeTeams,
+    DragonRiders,
     Dragons,
+    Event,
     Evolution,
+    ElytraRings,
+    Gravity,
+    GemHunters,
+    Halloween,
+    Halloween2016,
+    HoleInTheWall,
+    Horse,
     MilkCow,
+    NanoGames,
+    Lobbers,
+    MinecraftLeague,
+    OldMineWare,
     Paintball,
     Quiver,
+    QuiverTeams,
     Runner,
+    SearchAndDestroy,
     Sheep,
     Snake,
     SneakyAssassins,
+    SnowFight,
     Spleef,
-    SquidShooters,
+    SpleefTeams,
+    SquidShooter,
+    Stacker,
     WitherAssault,
+    Wizards,
+    ZombieSurvival,
 }
 
 struct Games {
@@ -299,7 +354,7 @@ lazy_static! {
         (GameType::MineStrike, BoosterGroup::MineStrike),
         (GameType::Smash, BoosterGroup::Smash_Mobs),
         (GameType::SmashTeams, BoosterGroup::Smash_Mobs),
-        (GameType::ChampionsDOM, BoosterGroup::Champions),
+        (GameType::ChampionsDominate, BoosterGroup::Champions),
         (GameType::ChampionsCTF, BoosterGroup::Champions)
     ]);
     static ref GAME_TO_PLAYER_COUNT: HashMap<GameType, (u8, u8)> = HashMap::from([
@@ -320,7 +375,7 @@ lazy_static! {
         (GameType::MineStrike, (8, 16)),
         (GameType::Smash, (4, 6)),
         (GameType::SmashTeams, (4, 6)),
-        (GameType::ChampionsDOM, (8, 10)),
+        (GameType::ChampionsDominate, (8, 10)),
         (GameType::ChampionsCTF, (10, 16)),
         (GameType::Clans, (1, 50)),
         (GameType::ClansHub, (1, 50)),
@@ -343,7 +398,7 @@ lazy_static! {
         (GameType::MineStrike, "MS"),
         (GameType::Smash, "SSM"),
         (GameType::SmashTeams, "SSM2"),
-        (GameType::ChampionsDOM, "DOM"),
+        (GameType::ChampionsDominate, "DOM"),
         (GameType::ChampionsCTF, "CTF"),
         (GameType::Clans, "Clans"),
         (GameType::ClansHub, "ClansHub"),
@@ -366,7 +421,7 @@ lazy_static! {
         ("MS", GameType::MineStrike),
         ("SSM", GameType::Smash),
         ("SSM2", GameType::SmashTeams),
-        ("DOM", GameType::ChampionsDOM),
+        ("DOM", GameType::ChampionsDominate),
         ("CTF", GameType::ChampionsCTF),
         ("Clans", GameType::Clans),
         ("ClansHub", GameType::ClansHub),
@@ -375,7 +430,7 @@ lazy_static! {
         (GameType::Skywars, GameType::SkywarsTeams),
         (GameType::SurvivalGames, GameType::SurvivalGamesTeams),
         (GameType::Smash, GameType::SmashTeams),
-        (GameType::ChampionsDOM, GameType::ChampionsCTF),
+        (GameType::ChampionsDominate, GameType::ChampionsCTF),
         (GameType::CakeWars4, GameType::CakeWarsDuos),
     ]);
 }
@@ -397,7 +452,7 @@ enum BoosterGroup {
     Champions,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug)]
 enum Region {
     US,
     EU,
@@ -410,128 +465,69 @@ impl Default for Region {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
+impl TryFrom<String> for Region {
+    type Error = ServerGroupParsingError;
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        match value.as_str() {
+            "US" | "" => Ok(Region::US),
+            "EU" => Ok(Region::EU),
+            "ALL" => Ok(Region::ALL),
+            _ => Err(ServerGroupParsingError::new(
+                "Region could not be parsed.".into(),
+            )),
+        }
+    }
+}
+
+#[derive(Debug)]
 struct ServerGroup {
     name: String,
     prefix: String,
-    #[serde(deserialize_with = "to_u16")]
     ram: u16,
-    #[serde(deserialize_with = "to_u8")]
     cpu: u8,
-    #[serde(deserialize_with = "to_u8")]
     total_servers: u8,
-    #[serde(deserialize_with = "to_u8")]
     joinable_servers: u8,
-    #[serde(deserialize_with = "to_u16")]
     port_section: u16,
     uptimes: Option<String>,
-    #[serde(deserialize_with = "to_bool")]
     arcade_group: bool,
     world_zip: String,
     plugin: String,
     config_path: String,
     host: Option<String>,
-    #[serde(deserialize_with = "to_u8")]
     min_players: u8,
-    #[serde(deserialize_with = "to_u8")]
     max_players: u8,
-    #[serde(deserialize_with = "to_bool")]
     pvp: bool,
-    #[serde(deserialize_with = "to_bool")]
     tournament: bool,
-    #[serde(deserialize_with = "to_bool")]
     tournament_points: bool,
-    #[serde(default, deserialize_with = "to_bool")]
     hard_max_player_cap: bool,
     games: Option<String>,
     modes: Option<String>,
     booster_group: Option<String>,
     server_type: String,
-    #[serde(deserialize_with = "to_bool")]
     add_no_cheat: bool,
-    #[serde(default, deserialize_with = "to_bool")]
     add_world_edit: bool,
-    #[serde(deserialize_with = "to_bool")]
     team_rejoin: bool,
-    #[serde(default, deserialize_with = "to_bool")]
     team_auto_join: bool,
-    #[serde(default, deserialize_with = "to_bool")]
     team_force_balance: bool,
-    #[serde(deserialize_with = "to_bool")]
     game_auto_start: bool,
-    #[serde(deserialize_with = "to_bool")]
     game_timeout: bool,
-    #[serde(default, deserialize_with = "to_bool")]
     game_voting: bool,
-    #[serde(default, deserialize_with = "to_bool")]
     map_voting: bool,
-    #[serde(deserialize_with = "to_bool")]
     reward_gems: bool,
-    #[serde(deserialize_with = "to_bool")]
     reward_items: bool,
-    #[serde(deserialize_with = "to_bool")]
     reward_stats: bool,
-    #[serde(deserialize_with = "to_bool")]
     reward_achievements: bool,
-    #[serde(deserialize_with = "to_bool")]
     hotbar_inventory: bool,
-    #[serde(deserialize_with = "to_bool")]
     hotbar_hub_clock: bool,
-    #[serde(deserialize_with = "to_bool")]
     player_kick_idle: bool,
-    #[serde(default, deserialize_with = "to_bool")]
     staff_only: bool,
-    #[serde(default, deserialize_with = "to_bool")]
     whitelist: bool,
     resource_pack: Option<String>,
-    #[serde(default, deserialize_with = "to_region")]
     region: Region,
     team_server_key: Option<String>,
     portal_bottom_corner_location: Option<String>,
     portal_top_corner_location: Option<String>,
     npc_name: Option<String>,
-}
-
-fn to_region<'de, D>(deserializer: D) -> Result<Region, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let s: &str = de::Deserialize::deserialize(deserializer)?;
-    match s {
-        "ALL" => Ok(Region::ALL),
-        "US" => Ok(Region::US),
-        "EU" => Ok(Region::EU),
-        _ => Err(de::Error::unknown_variant(s, &["ALL", "US", "EU"])),
-    }
-}
-
-fn to_u16<'de, D>(deserializer: D) -> Result<u16, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let s: &str = de::Deserialize::deserialize(deserializer)?;
-    s.parse::<u16>().map_err(de::Error::custom)
-}
-
-fn to_u8<'de, D>(deserializer: D) -> Result<u8, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let s: &str = de::Deserialize::deserialize(deserializer)?;
-    s.parse::<u8>().map_err(de::Error::custom)
-}
-
-fn to_bool<'de, D>(deserializer: D) -> Result<bool, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let s: &str = de::Deserialize::deserialize(deserializer)?;
-    match s {
-        "true" => Ok(true),
-        "false" => Ok(false),
-        _ => Err(de::Error::unknown_variant(s, &["true", "false"])),
-    }
 }
 
 impl From<Game> for ServerGroup {
@@ -593,6 +589,157 @@ impl From<Game> for ServerGroup {
     }
 }
 
+fn parse_value<'a>(
+    prefix: &String,
+    map: &HashMap<String, String>,
+    key: &'a str,
+) -> Result<String, ServerGroupParsingError> {
+    Ok(map
+        .get(key)
+        .ok_or(ServerGroupParsingError::new(format!(
+            "servergroups.{}  {:?} could not be found.",
+            prefix, key
+        )))?
+        .to_string())
+}
+
+fn parse_bool_or_default<'a>(
+    prefix: &String,
+    map: &HashMap<String, String>,
+    key: &'a str,
+) -> Result<bool, ServerGroupParsingError> {
+    match map.get(key).unwrap_or(&String::new()).as_str() {
+        "true" => Ok(true),
+        "false" => Ok(false),
+        "null" | "" => Ok(false),
+        _ => Err(ServerGroupParsingError::new(format!(
+            "servergroups.{}: {:?} could not be found",
+            prefix, key
+        ))),
+    }
+}
+
+fn parse_u8<'a>(
+    prefix: &String,
+    map: &HashMap<String, String>,
+    key: &'a str,
+) -> Result<u8, ServerGroupParsingError> {
+    map.get(key)
+        .ok_or(ServerGroupParsingError::new(format!(
+            "servergroups.{}  {:?} (u8) could not be found.",
+            prefix, key
+        )))?
+        .parse()
+        .map_err(|err| {
+            ServerGroupParsingError::new(format!(
+                "servergroups.{}  {:?} (u8): {:?}",
+                prefix, key, err
+            ))
+        })
+}
+
+fn parse_u16<'a>(
+    prefix: &String,
+    map: &HashMap<String, String>,
+    key: &'a str,
+) -> Result<u16, ServerGroupParsingError> {
+    map.get(key)
+        .ok_or(ServerGroupParsingError::new(format!(
+            "servergroups.{}  {:?} (u16) could not be found",
+            prefix, key
+        )))?
+        .parse()
+        .map_err(|err| {
+            ServerGroupParsingError::new(format!(
+                "servergroups.{}  {:?} (u16): {:?}",
+                prefix, key, err
+            ))
+        })
+}
+
+fn parse_optional_str<'a>(
+    map: &HashMap<String, String>,
+    key: &'a str,
+) -> Result<Option<String>, ServerGroupParsingError> {
+    Ok(map.get(key).cloned())
+}
+
+impl TryFrom<&str> for ServerGroup {
+    type Error = ServerGroupParsingError;
+    fn try_from(group: &str) -> Result<Self, Self::Error> {
+        get_server_group(&format!("servergroups.{}", group))
+    }
+}
+
+impl TryFrom<HashMap<String, String>> for ServerGroup {
+    type Error = ServerGroupParsingError;
+    fn try_from(map: HashMap<String, String>) -> Result<Self, Self::Error> {
+        let name = map
+            .get("name")
+            .ok_or(ServerGroupParsingError::new(
+                "ServerGroup's name could not be found".into(),
+            ))?
+            .to_string();
+        let prefix = name.clone();
+        assert_eq!(parse_value(&prefix, &map, "prefix")?, prefix);
+        let server_group = Self {
+            name,
+            prefix: prefix.clone(),
+            ram: parse_u16(&prefix, &map, "ram")?,
+            cpu: parse_u8(&prefix, &map, "cpu")?,
+            total_servers: parse_u8(&prefix, &map, "totalServers")?,
+            joinable_servers: parse_u8(&prefix, &map, "joinableServers")?,
+            port_section: parse_u16(&prefix, &map, "portSection")?,
+            uptimes: parse_optional_str(&map, "uptimes")?,
+            arcade_group: parse_bool_or_default(&prefix, &map, "arcadeGroup")?,
+            world_zip: parse_value(&prefix, &map, "worldZip")?,
+            plugin: parse_value(&prefix, &map, "plugin")?,
+            config_path: parse_value(&prefix, &map, "configPath")?,
+            host: parse_optional_str(&map, "host")?,
+            min_players: parse_u8(&prefix, &map, "minPlayers")?,
+            max_players: parse_u8(&prefix, &map, "maxPlayers")?,
+            pvp: parse_bool_or_default(&prefix, &map, "pvp")?,
+            tournament: parse_bool_or_default(&prefix, &map, "tournament")?,
+            tournament_points: parse_bool_or_default(&prefix, &map, "tournamentPoints")?,
+            hard_max_player_cap: parse_bool_or_default(&prefix, &map, "hardMaxPlayerCap")?,
+            games: parse_optional_str(&map, "games")?,
+            modes: parse_optional_str(&map, "modes")?,
+            booster_group: parse_optional_str(&map, "boosterGroup")?,
+            server_type: parse_value(&prefix, &map, "serverType")?,
+            add_no_cheat: parse_bool_or_default(&prefix, &map, "addNoCheat")?,
+            add_world_edit: parse_bool_or_default(&prefix, &map, "addWorldEdit")?,
+            team_rejoin: parse_bool_or_default(&prefix, &map, "teamRejoin")?,
+            team_auto_join: parse_bool_or_default(&prefix, &map, "teamAutoJoin")?,
+            team_force_balance: parse_bool_or_default(&prefix, &map, "teamForceBalance")?,
+            game_auto_start: parse_bool_or_default(&prefix, &map, "gameAutoStart")?,
+            game_timeout: parse_bool_or_default(&prefix, &map, "gameTimeout")?,
+            game_voting: parse_bool_or_default(&prefix, &map, "gameVoting")?,
+            map_voting: parse_bool_or_default(&prefix, &map, "mapVoting")?,
+            reward_gems: parse_bool_or_default(&prefix, &map, "rewardGems")?,
+            reward_items: parse_bool_or_default(&prefix, &map, "rewardItems")?,
+            reward_stats: parse_bool_or_default(&prefix, &map, "rewardStats")?,
+            reward_achievements: parse_bool_or_default(&prefix, &map, "rewardAchievements")?,
+            hotbar_inventory: parse_bool_or_default(&prefix, &map, "hotbarInventory")?,
+            hotbar_hub_clock: parse_bool_or_default(&prefix, &map, "hotbarHubClock")?,
+            player_kick_idle: parse_bool_or_default(&prefix, &map, "playerKickIdle")?,
+            staff_only: parse_bool_or_default(&prefix, &map, "staffOnly")?,
+            whitelist: parse_bool_or_default(&prefix, &map, "whitelist")?,
+            resource_pack: parse_optional_str(&map, "resourcePack")?,
+            region: Region::try_from(parse_value(&prefix, &map, "region")?).map_err(|err| {
+                ServerGroupParsingError::new(format!(
+                    "servergroups.{} {:?}: {:?}",
+                    &prefix, "region", err
+                ))
+            })?,
+            team_server_key: parse_optional_str(&map, "teamServerKey")?,
+            portal_bottom_corner_location: parse_optional_str(&map, "portalBottomCornerLocation")?,
+            portal_top_corner_location: parse_optional_str(&map, "portalTopCornerLocation")?,
+            npc_name: parse_optional_str(&map, "npcName")?,
+        };
+        Ok(server_group)
+    }
+}
+
 #[derive(Deserialize, Serialize, Debug)]
 struct Config {
     redis_conn: RedisConfig,
@@ -651,27 +798,6 @@ fn connect(config: &Config) -> redis::Connection {
     .expect("Redis client could not be opened.")
 }
 
-#[allow(dead_code)]
-fn get_port(group: &String, conn: &mut redis::Connection) -> Result<u16, ServerGroupParsingError> {
-    let res: u16 = redis::cmd("HGET")
-        .arg(group)
-        .arg("portSection")
-        .query(conn)
-        .map_err(|_| {
-            ServerGroupParsingError::new(
-                "Redis data for ServerGroup could not be retrieved.".into(),
-            )
-        })?;
-    Ok(res)
-}
-
-#[allow(dead_code)]
-fn get_ports(groups: Vec<String>) -> Result<Vec<u16>, ServerGroupParsingError> {
-    let config: Config = Config::get_config();
-    let mut conn = connect(&config);
-    groups.iter().map(|sg| get_port(sg, &mut conn)).collect()
-}
-
 fn get_server_groups() -> Result<Vec<ServerGroup>, ServerGroupParsingError> {
     let config: Config = Config::get_config();
     let mut conn = connect(&config);
@@ -690,7 +816,7 @@ fn get_server_groups() -> Result<Vec<ServerGroup>, ServerGroupParsingError> {
         .collect()
 }
 
-fn get_cached_port_sections() -> Result<Vec<u16>, ServerGroupParsingError> {
+fn get_all_port_sections() -> Result<Vec<u16>, ServerGroupParsingError> {
     let server_groups: Vec<ServerGroup> = get_server_groups()?;
     let ports: Vec<u16> = server_groups
         .iter()
@@ -702,28 +828,18 @@ fn get_cached_port_sections() -> Result<Vec<u16>, ServerGroupParsingError> {
 fn get_server_group(redis_key: &String) -> Result<ServerGroup, ServerGroupParsingError> {
     let config: Config = Config::get_config();
     let mut conn = connect(&config);
-    let output: HashMap<String, String> = redis::cmd("HGETALL")
+    let redis_data: HashMap<String, String> = redis::cmd("HGETALL")
         .arg(redis_key)
         .query(&mut conn)
         .map_err(|_| {
             ServerGroupParsingError::new("Redis data for ServerGroup could not be retrieved".into())
         })?;
-    if output.is_empty() {
-        return Err(ServerGroupParsingError::new("ServerGroup is empty".into()));
-    }
-    let sg_str = serde_json::to_string(&output).map_err(|_| {
-        ServerGroupParsingError::new(format!("Could not serialize: {:?} from redis", redis_key))
-    })?;
-    serde_json::from_str(&sg_str).map_err(|err| {
-        ServerGroupParsingError::new(format!(
-            "Could not deserialize redis data for {:?}, Err message: {:?}",
-            redis_key, err
-        ))
-    })
+    Ok(ServerGroup::try_from(redis_data)?)
 }
 
 fn main() {
-    dbg!(ServerGroup::from(Game::from(&GameType::Lobbers)));
-    //let ports: Result<Vec<u16>, ServerGroupParsingError> = get_cached_port_sections();
+    dbg!(ServerGroup::try_from("MIN").ok());
+    //dbg!(ServerGroup::from(Game::from(&GameType::ChampionsDominate)));
+    //let ports: Result<Vec<u16>, ServerGroupParsingError> = get_all_port_sections();
     //dbg!(ports);
 }
