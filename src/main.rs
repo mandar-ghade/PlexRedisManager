@@ -592,8 +592,18 @@ impl TryFrom<String> for Region {
     }
 }
 
+impl From<Region> for String {
+    fn from(region: Region) -> Self {
+        match region {
+            Region::US => "US".into(),
+            Region::EU => "EU".into(),
+            Region::ALL => "ALL".into(),
+        }
+    }
+}
+
 #[allow(dead_code)]
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct ServerGroup {
     name: String,
     prefix: String,
@@ -911,6 +921,106 @@ impl Config {
     }
 }
 
+impl From<ServerGroup> for HashMap<String, String> {
+    fn from(group: ServerGroup) -> Self {
+        HashMap::from([
+            ("name".into(), group.name),
+            ("prefix".into(), group.prefix),
+            ("ram".into(), group.ram.to_string()),
+            ("cpu".into(), group.cpu.to_string()),
+            ("totalServers".into(), group.total_servers.to_string()),
+            ("joinableServers".into(), group.joinable_servers.to_string()),
+            ("portSection".into(), group.port_section.to_string()),
+            ("uptimes".into(), group.uptimes.unwrap_or(String::new())),
+            ("arcadeGroup".into(), group.arcade_group.to_string()),
+            ("worldZip".into(), group.world_zip),
+            ("plugin".into(), group.plugin),
+            ("configPath".into(), group.config_path),
+            ("host".into(), group.host.unwrap_or(String::new())),
+            ("minPlayers".into(), group.min_players.to_string()),
+            ("maxPlayers".into(), group.max_players.to_string()),
+            ("pvp".into(), group.pvp.to_string()),
+            ("tournament".into(), group.tournament.to_string()),
+            (
+                "tournamentPoints".into(),
+                group.tournament_points.to_string(),
+            ),
+            (
+                "hardMaxPlayerCap".into(),
+                group.hard_max_player_cap.to_string(),
+            ),
+            ("games".into(), group.games.unwrap_or(String::new())),
+            ("modes".into(), group.modes.unwrap_or(String::new())),
+            (
+                "boosterGroup".into(),
+                group.booster_group.unwrap_or(String::new()),
+            ),
+            ("serverType".into(), group.server_type),
+            ("addNoCheat".into(), group.add_no_cheat.to_string()),
+            ("addWorldEdit".into(), group.add_world_edit.to_string()),
+            ("teamRejoin".into(), group.team_rejoin.to_string()),
+            ("teamAutoJoin".into(), group.team_auto_join.to_string()),
+            (
+                "teamForceBalance".into(),
+                group.team_force_balance.to_string(),
+            ),
+            ("gameAutoStart".into(), group.game_auto_start.to_string()),
+            ("gameTimeout".into(), group.game_timeout.to_string()),
+            ("gameVoting".into(), group.game_voting.to_string()),
+            ("mapVoting".into(), group.map_voting.to_string()),
+            ("rewardGems".into(), group.reward_gems.to_string()),
+            ("rewardItems".into(), group.reward_items.to_string()),
+            ("rewardStats".into(), group.reward_stats.to_string()),
+            (
+                "rewardAchievements".into(),
+                group.reward_achievements.to_string(),
+            ),
+            ("hotbarInventory".into(), group.hotbar_inventory.to_string()),
+            ("hotbarHubClock".into(), group.hotbar_hub_clock.to_string()),
+            ("playerKickIdle".into(), group.player_kick_idle.to_string()),
+            ("staffOnly".into(), group.staff_only.to_string()),
+            ("whitelist".into(), group.whitelist.to_string()),
+            (
+                "resourcePack".into(),
+                group.resource_pack.unwrap_or(String::new()),
+            ),
+            ("region".into(), group.region.into()),
+            (
+                "teamServerKey".into(),
+                group.team_server_key.unwrap_or(String::new()),
+            ),
+            (
+                "portalBottomCornerLocation".into(),
+                group.portal_bottom_corner_location.unwrap_or(String::new()),
+            ),
+            (
+                "portalTopCornerLocation".into(),
+                group.portal_top_corner_location.unwrap_or(String::new()),
+            ),
+            ("npcName".into(), group.npc_name.unwrap_or(String::new())),
+        ])
+    }
+}
+
+impl ServerGroup {
+    fn create(&self) -> Result<(), redis::RedisError> {
+        let config: Config = Config::get_config();
+        let mut conn = connect(&config);
+        let redis_key: String = format!("servergroups.{}", self.prefix);
+        let sg = get_server_group(&redis_key).ok();
+        if sg.is_some() {
+            // exists in redis already
+            return Ok(());
+        }
+        let params: HashMap<String, String> = self.clone().into();
+        let _: () = redis::cmd("HSET")
+            .arg(redis_key)
+            .arg(params)
+            .query(&mut conn)?;
+        Ok(())
+    }
+}
+
 fn connect(config: &Config) -> redis::Connection {
     redis::Client::open(format!(
         "redis://{}:{}",
@@ -961,8 +1071,9 @@ fn get_server_group(redis_key: &String) -> Result<ServerGroup, ServerGroupParsin
 }
 
 fn main() {
-    let clans_hub = Game::try_from(GameType::ClansHub);
-    dbg!(clans_hub);
+    let game: Result<Game, ServerGroupParsingError> = Game::try_from(GameType::ClansHub);
+    let clans_hub: ServerGroup = ServerGroup::from(game.unwrap());
+    dbg!(clans_hub.create());
     //let ports: Result<Vec<u16>, ServerGroupParsingError> = get_all_port_sections();
     //dbg!(ports);
 }
