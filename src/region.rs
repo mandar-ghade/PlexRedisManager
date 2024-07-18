@@ -1,6 +1,8 @@
+use strum_macros::Display;
+
 use crate::error::parsing_error::ServerGroupParsingError;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Display)]
 pub enum Region {
     US,
     EU,
