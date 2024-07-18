@@ -351,24 +351,59 @@ impl FromRedisValue for MinecraftServer {
 }
 
 impl MinecraftServer {
-    pub fn get_server_status(
-        server_name: &String,
-        region: &Region,
-    ) -> Result<Self, MinecraftServerError> {
+    pub fn from_server_group(
+        server_group: &ServerGroup,
+    ) -> Result<Vec<Self>, MinecraftServerError> {
         let config: Config = Config::get_config();
         let mut conn = connect(&config);
+        let server_statuses: Vec<String> = redis::cmd("KEYS")
+            .arg(format!(
+                "serverstatus.minecraft.{}.{}-*",
+                server_group.region, server_group.prefix
+            ))
+            .query(&mut conn)
+            .map_err(|_| -> MinecraftServerError {
+                "Redis data for MinecraftServer could not be retrieved. MinecraftServer iteration failed."
+                    .to_string().into()
+            })?;
+        server_statuses
+            .iter()
+            .map(|sg| Self::get_from_raw_str(sg.as_str()))
+            .collect()
+    }
+
+    pub fn get_all() -> Result<Vec<Self>, MinecraftServerError> {
+        let config: Config = Config::get_config();
+        let mut conn = connect(&config);
+        let server_statuses: Vec<String> = redis::cmd("KEYS")
+            .arg("serverstatus.minecraft.*.*")
+            .query(&mut conn)
+            .map_err(|_| -> MinecraftServerError {
+                "Redis data for MinecraftServer could not be retrieved. MinecraftServer iteration failed."
+                    .to_string().into()
+            })?;
+        server_statuses
+            .iter()
+            .map(|sg| Self::get_from_raw_str(sg.as_str()))
+            .collect()
+    }
+
+    fn get_from_raw_str(key: &str) -> Result<Self, MinecraftServerError> {
+        let config: Config = Config::get_config();
+        let mut conn = connect(&config);
+        redis::cmd("GET").arg(key).query(&mut conn).map_err(|err| {
+            format!("Redis data for {:?} could not be retrieved: {:?}", key, err)
+                .to_string()
+                .into()
+        })
+    }
+
+    pub fn get(server_name: &String, region: &Region) -> Result<Self, MinecraftServerError> {
         let key: String = format!(
             "serverstatus.minecraft.{}.{}",
             region.to_string(),
             server_name
         );
-        redis::cmd("GET").arg(key).query(&mut conn).map_err(|err| {
-            format!(
-                "Redis data for ServerStatus could not be retrieved: {:?}",
-                err
-            )
-            .to_string()
-            .into()
-        })
+        Self::get_from_raw_str(key.as_str())
     }
 }

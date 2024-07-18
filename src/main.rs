@@ -24,10 +24,9 @@ enum GenericServer {
 fn main() {
     let game: Result<Game, ServerGroupParsingError> = Game::try_from(GameType::ClansHub);
     let clans_hub: ServerGroup = ServerGroup::from(game.unwrap());
-    let lobby_server_status =
-        MinecraftServer::get_server_status(&String::from("MIN-1"), &Region::US);
+    let server_statuses = MinecraftServer::get_all();
     dbg!(clans_hub);
-    dbg!(lobby_server_status);
+    dbg!(server_statuses);
     //let ports: Result<Vec<u16>, ServerGroupParsingError> = ServerGroup::get_all_port_sections();
     //dbg!(ports);
 }
