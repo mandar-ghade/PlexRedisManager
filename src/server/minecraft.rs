@@ -372,6 +372,21 @@ impl MinecraftServer {
             .collect()
     }
 
+    fn get_uptime_as_seconds(&self) -> i64 {
+        return Local::now().timestamp() - (self.start_up_date as i64);
+    }
+
+    fn is_empty(&self) -> bool {
+        return self.player_count == 0;
+    }
+
+    pub fn get_empty_servers() -> Result<Vec<Self>, MinecraftServerError> {
+        Ok(Self::get_all()?
+            .into_iter()
+            .filter(|sv| sv.is_empty() && sv.get_uptime_as_seconds() >= 150)
+            .collect())
+    }
+
     pub fn get_all() -> Result<Vec<Self>, MinecraftServerError> {
         let config: Config = Config::get_config();
         let mut conn = connect(&config);
@@ -384,7 +399,7 @@ impl MinecraftServer {
             })?;
         server_statuses
             .iter()
-            .map(|sg| Self::get_from_raw_str(sg.as_str()))
+            .map(|ss| Self::get_from_raw_str(ss.as_str()))
             .collect()
     }
 
