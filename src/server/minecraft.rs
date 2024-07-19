@@ -248,8 +248,8 @@ pub struct MinecraftServer {
     public_address: String,
     port: u16,
     donors_online: u8,
-    start_up_date: u64,
-    current_time: u64,
+    start_up_date: u64, // seconds since epoch
+    current_time: u64,  // ms since epoch
 }
 
 impl From<String> for MinecraftServerError {
@@ -374,6 +374,14 @@ impl MinecraftServer {
 
     fn get_uptime_as_seconds(&self) -> i64 {
         return Local::now().timestamp() - (self.start_up_date as i64);
+    }
+
+    fn get_prefix(&self) -> u8 {
+        let (_, prefix) = self
+            .name
+            .split_once('-')
+            .unwrap_or((self.name.as_str(), "0"));
+        prefix.parse().unwrap_or(0)
     }
 
     fn is_empty(&self) -> bool {

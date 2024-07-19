@@ -8,6 +8,7 @@ mod server;
 use game::Game;
 
 use crate::{
+    config::models::Config,
     error::parsing_error::ServerGroupParsingError,
     game::r#type::GameType,
     region::Region,
@@ -21,12 +22,24 @@ enum GenericServer {
     BetaHub,
 }
 
+fn get_best_server_test(cfg: &mut Config, group: &ServerGroup) -> () {
+    let dedicated_servers = &mut cfg.dedicated_servers;
+    dbg!(&dedicated_servers);
+    let next = dedicated_servers.get_best_dedicated_server(group);
+    dbg!(&next);
+    if let Some(dedi) = next {
+        dedi.add_server(group);
+        dbg!(dedi);
+    }
+    let next_available = dedicated_servers.get_best_dedicated_server(group); // new server found
+    dbg!(&next_available);
+}
+
 fn main() {
     let game: Result<Game, ServerGroupParsingError> = Game::try_from(GameType::ClansHub);
     let clans_hub: ServerGroup = ServerGroup::from(game.unwrap());
-    let server_statuses = MinecraftServer::get_all();
-    dbg!(clans_hub);
-    dbg!(server_statuses);
-    //let ports: Result<Vec<u16>, ServerGroupParsingError> = ServerGroup::get_all_port_sections();
-    //dbg!(ports);
+    let mut _cfg = Config::get_config();
+    //get_best_server_test(&mut cfg, &clans_hub);
+    dbg!(&_cfg);
+    //let server_statuses = MinecraftServer::get_all();
 }

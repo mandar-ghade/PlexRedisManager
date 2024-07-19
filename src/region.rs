@@ -1,8 +1,9 @@
+use serde::{Deserialize, Serialize};
 use strum_macros::Display;
 
 use crate::error::parsing_error::ServerGroupParsingError;
 
-#[derive(Clone, Debug, Display)]
+#[derive(Clone, Debug, Display, Hash, PartialEq, Eq, Deserialize, Serialize)]
 pub enum Region {
     US,
     EU,

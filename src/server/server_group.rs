@@ -1,3 +1,5 @@
+use serde::Deserialize;
+
 use crate::config::models::Config;
 use crate::error::parsing_error::ServerGroupParsingError;
 use crate::game::utils::GAME_TO_SERVER_PREFIX;
@@ -6,7 +8,7 @@ use crate::redis::connect;
 use crate::region::Region;
 use std::collections::HashMap;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Deserialize)] // deserialize isn't used.
 pub struct ServerGroup {
     pub name: String,
     pub prefix: String,

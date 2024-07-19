@@ -1,3 +1,36 @@
 [redis_conn]
 address = "127.0.0.1"
 port = "6379"
+
+[sys_info]
+system = "Linux"
+
+[monitor_info]
+scripts_path = "/home/mineplex"
+worlds_path = "/home/mineplex/worlds"
+config_path = "/home/mineplex/configs"
+
+[[dedicated_servers.servers]]
+name = "localhost"
+public_address = "127.0.0.1"
+private_address = "127.0.0.1"
+region = "US"
+cpu = 6
+ram = 6000
+
+# FOR MORE DEDICATED SERVERS: EXTEND USING FORMAT OUTLINED BELOW
+# [[dedicated_servers.servers]]
+# name = "MineplexDedi"
+# public_address = "127.0.0.1"
+# private_address = "127.0.0.1"
+# region = "US" # or EU
+# cpu = 10
+# ram = 7000
+
+# [[dedicated_servers.servers]]
+# name = "MineplexDedi2"
+# public_address = "127.0.0.1"
+# private_address = "127.0.0.1"
+# region = "US" # or EU
+# cpu = 9
+# ram = 19300
