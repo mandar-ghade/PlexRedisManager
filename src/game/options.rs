@@ -160,20 +160,29 @@ impl TryFrom<GameType> for GameOptions {
 }
 
 impl GameOptions {
-    fn rnd_port() -> Result<u16, ServerGroupParsingError> {
-        // returns non-conflicting port section
-        let mut rng = rand::thread_rng();
-        let ports = ServerGroup::get_all_port_sections()?;
-        let mut port: u16 = rng.gen_range(25565..26001);
-        while ports.iter().any(|&cached_port| {
-            (port < cached_port && cached_port < port + 10) // cache conflicts with NEW.
-                | (cached_port < port && port <= cached_port + 10) // OR NEW conflicts with cache
+    pub fn check_port_section_conflicts(port_section: u16, cached_ports: &Vec<u16>) -> bool {
+        //! Checks if new port section conflicts with other port sections in cache.
+        //! Each port section is unique to their ServerGroup.
+        //! A port section holds 10 values where a certain server instances's port can be made from.
+        //! A server instance's port can be anything ten above the current port section of its servergroup.
+        cached_ports.iter().any(|&cached_port| {
+            (port_section < cached_port && cached_port <= port_section + 10) // cache conflicts with NEW
+            || (cached_port < port_section && port_section <= cached_port + 10) // OR NEW conflicts with cache
+            || (cached_port == port_section) // they're the same
         })
+    }
+
+    fn rnd_port() -> Result<u16, ServerGroupParsingError> {
+        //! Returns non-conflicting port section
+        let mut rng = rand::thread_rng();
+        let port_sections: Vec<u16> = ServerGroup::get_all_port_sections()?;
+        let mut port_section: u16 = rng.gen_range(25565..26001);
+        while Self::check_port_section_conflicts(port_section, &port_sections)
         // port section conflict (either can be 10 above the other)
         {
-            port = rng.gen_range(25565..26001);
+            port_section = rng.gen_range(25565..26001);
         }
-        Ok(port)
+        Ok(port_section)
     }
 
     fn load_from_cache(game: &GameType) -> Option<ServerGroup> {

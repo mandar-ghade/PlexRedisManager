@@ -138,6 +138,8 @@ fn parse_optional_str<'a>(
 }
 
 impl From<Game> for ServerGroup {
+    //! Generally handle one conversion and creation together,
+    //! Or it could lead to port section conflicts.
     fn from(game: Game) -> Self {
         Self {
             name: game.options.prefix.clone(),
