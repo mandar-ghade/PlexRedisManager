@@ -409,13 +409,13 @@ impl ServerGroup {
         Ok(())
     }
 
-    pub fn minimize_port_collisions(&mut self) -> Result<(), ServerGroupParsingError> {
-        //! Minimizes port collisions between `self` and cached `ServerGroup`s by generating a new
+    pub fn eliminate_port_collisions(&mut self) -> Result<(), ServerGroupParsingError> {
+        //! Eliminates port collisions between `self` and cached `ServerGroup`s by generating a new
         //! port section.
         //! (Call this function before caching)
         self.reset_port_section_if_invalid().map_err(|err| {
             ServerGroupParsingError::new(format!(
-                "Error while executing `minimize_port_collisions` in ServerGroup (could not reset port): {:?}",
+                "Error while executing `eliminate_port_collisions` in ServerGroup (could not reset port): {:?}",
                 err
             ))
         })?;
@@ -487,7 +487,7 @@ impl ServerGroup {
                 .query(&mut conn)?;
             return Ok(());
         }
-        self.minimize_port_collisions()?; // no more conflicting ports
+        self.eliminate_port_collisions()?; // no more conflicting ports
         let params: HashMap<String, String> = self.clone().into();
         let _: () = redis::cmd("HSET")
             .arg(redis_key)

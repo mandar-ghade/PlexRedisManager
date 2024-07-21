@@ -18,7 +18,7 @@ impl GenericServer {
             .get(self)
             .map(|sg| sg.clone().to_owned())
         {
-            group.minimize_port_collisions()?;
+            group.eliminate_port_collisions()?;
             group.load_existing_cache();
             Ok(Some(group))
         } else {
