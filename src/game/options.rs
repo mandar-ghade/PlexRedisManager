@@ -13,7 +13,7 @@ use super::{
     r#type::GameType,
     utils::{
         CUSTOM_GAME_OPTIONS, GAME_TO_BOOSTER_GROUP, GAME_TO_NPC, GAME_TO_PLAYER_COUNT,
-        GAME_TO_SERVER_PREFIX, GAME_TO_TEAM_SERVER, SERVER_PREFIX_TO_GAME,
+        GAME_TO_SERVER_PREFIX, GAME_TO_TEAM_SERVER, MIXED_ARCADE_GAMES, SERVER_PREFIX_TO_GAME,
     },
 };
 
@@ -66,6 +66,7 @@ impl TryFrom<GameType> for GameOptions {
         let binding = Self::load_from_cache(&game);
         let cached: Option<&ServerGroup> = binding.as_ref();
         if let Some(options) = CUSTOM_GAME_OPTIONS.get(&game) {
+            // for custom game options
             if cached.is_none() {
                 let mut new = options.clone();
                 new.port_section = Self::rnd_port()?;
@@ -100,15 +101,12 @@ impl TryFrom<GameType> for GameOptions {
             games: cached.map_or(
                 match Some(game) {
                     Some(GameType::MixedArcade) => Some(
-                        GameType::iter()
+                        MIXED_ARCADE_GAMES
+                            .iter()
                             .take(7)
-                            .fold(String::new(), |a, b| {
-                                if a.is_empty() {
-                                    b.to_string()
-                                } else {
-                                    format!("{},{}", a, b)
-                                }
-                            })
+                            .map(|g| g.to_string())
+                            .collect::<Vec<_>>()
+                            .join(",")
                             .to_string(),
                     ),
                     Some(g) => Some(g.to_string()),
@@ -160,32 +158,41 @@ impl TryFrom<GameType> for GameOptions {
 }
 
 impl GameOptions {
+    pub fn get_if_port_section_conflict(lhs: u16, rhs: u16) -> bool {
+        //! Returns `true` if either left port section
+        //! or right port section conflicts.
+        // lhs = port_section,
+        // rhs = cached_port
+        (lhs < rhs && rhs <= lhs + 10) // cache conflicts with NEW
+        || (rhs < lhs && lhs <= rhs + 10) // OR NEW conflicts with cache
+        || (rhs == lhs) // they're the same
+    }
+
     pub fn check_port_section_conflicts(port_section: u16, cached_ports: &Vec<u16>) -> bool {
         //! Checks if new port section conflicts with other port sections in cache.
         //! Each port section is unique to their ServerGroup.
         //! A port section holds 10 values where a certain server instances's port can be made from.
         //! A server instance's port can be anything ten above the current port section of its servergroup.
-        cached_ports.iter().any(|&cached_port| {
-            (port_section < cached_port && cached_port <= port_section + 10) // cache conflicts with NEW
-            || (cached_port < port_section && port_section <= cached_port + 10) // OR NEW conflicts with cache
-            || (cached_port == port_section) // they're the same
-        })
+        cached_ports
+            .iter()
+            .any(|&cached_port| Self::get_if_port_section_conflict(port_section, cached_port))
     }
 
     fn rnd_port() -> Result<u16, ServerGroupParsingError> {
         //! Returns non-conflicting port section
         let mut rng = rand::thread_rng();
         let port_sections: Vec<u16> = ServerGroup::get_all_port_sections()?;
-        let mut port_section: u16 = rng.gen_range(25565..26001);
+        let mut port_section: u16 = rng.gen_range(25566..26001);
         while Self::check_port_section_conflicts(port_section, &port_sections)
         // port section conflict (either can be 10 above the other)
         {
-            port_section = rng.gen_range(25565..26001);
+            port_section = rng.gen_range(25566..26001);
         }
         Ok(port_section)
     }
 
     fn load_from_cache(game: &GameType) -> Option<ServerGroup> {
+        //! Loads from pre-existing ServerGroup cache
         let prefix = GAME_TO_SERVER_PREFIX.get(game).cloned()?;
         ServerGroup::get_server_group(&format!("servergroups.{}", prefix)).ok()
     }

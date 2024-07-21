@@ -1,3 +1,5 @@
+use rand::rngs::ThreadRng;
+use rand::Rng;
 use redis::RedisError;
 use serde::Deserialize;
 
@@ -140,8 +142,6 @@ fn parse_optional_str<'a>(
 }
 
 impl From<Game> for ServerGroup {
-    //! Generally handle conversions and creations together,
-    //! Or it could lead to port section conflicts.
     fn from(game: Game) -> Self {
         Self {
             name: game.options.prefix.clone(),
@@ -201,6 +201,7 @@ impl From<Game> for ServerGroup {
 }
 
 impl TryFrom<&str> for ServerGroup {
+    /// Attempts to convert from str slice to ServerGroup.
     type Error = ServerGroupParsingError;
     fn try_from(group: &str) -> Result<Self, Self::Error> {
         Self::get_server_group(&format!("servergroups.{}", group))
@@ -375,42 +376,118 @@ impl From<ServerGroupParsingError> for RedisError {
 }
 
 impl ServerGroup {
+    pub fn load_existing_cache(&mut self) -> () {
+        //! Changes ServerGroup into cached value,
+        //! if exists or ServerGroup stays the same.
+        let redis_key: String = format!("servergroups.{}", self.prefix);
+        let cached: Option<ServerGroup> = Self::get_server_group(&redis_key).ok();
+        if cached.is_none() {
+            ()
+        }
+        *self = cached.unwrap().clone();
+        ()
+    }
+
+    pub fn is_cached(&self) -> bool {
+        //! Returns if ServerGroup was cached in redis.
+        let redis_key: String = format!("servergroups.{}", self.prefix);
+        Self::get_server_group(&redis_key).is_ok()
+    }
+
     pub fn delete(&self) -> Result<(), redis::RedisError> {
+        //! Deletes ServerGroup from cache.
         let config: Config = Config::get_config();
         let mut conn = connect(&config);
         let redis_key: String = format!("servergroups.{}", self.prefix);
-        if let Some(_) = Self::get_server_group(&redis_key).ok() {
+        if self.is_cached() {
             let _: () = redis::cmd("DEL").arg(redis_key).query(&mut conn)?;
         }
         let _: () = redis::cmd("SREM")
             .arg("servergroups")
             .arg(&self.prefix)
             .query(&mut conn)?;
-
         Ok(())
     }
 
-    pub fn create(&self) -> Result<(), redis::RedisError> {
+    pub fn minimize_port_collisions(&mut self) -> Result<(), ServerGroupParsingError> {
+        //! Minimizes port collisions between `self` and cached `ServerGroup`s by generating a new
+        //! port section.
+        //! (Call this function before caching)
+        self.reset_port_section_if_invalid().map_err(|err| {
+            ServerGroupParsingError::new(format!(
+                "Error while executing `minimize_port_collisions` in ServerGroup (could not reset port): {:?}",
+                err
+            ))
+        })?;
+        Ok(())
+    }
+
+    fn get_port_section_is_invalid(&self) -> Result<bool, ServerGroupParsingError> {
+        //! Returns `true` if port section conflicts with another group's cached port section, otherwise `false`.
+        //! Raises ServerGroupParsingError if there are issues while fetching existing port_sections.
+        Ok(GameOptions::check_port_section_conflicts(
+            self.port_section,
+            &self.get_all_other_port_sections()?,
+        ))
+    }
+
+    fn get_random_port_section(&mut self, rng: &mut ThreadRng) -> () {
+        //! Generates any random port from 25566 to 25600.
+        self.port_section = rng.gen_range(25566..26001);
+    }
+
+    fn reset_port_section_if_invalid(&mut self) -> Result<(), ServerGroupParsingError> {
+        //! Resets port section if it conflicts with another group's cached port section.
+        let mut rng = rand::thread_rng();
+        while self.get_port_section_is_invalid()? {
+            self.get_random_port_section(&mut rng);
+        }
+        Ok(())
+    }
+
+    fn find_port_conflicts(&mut self) -> Result<Vec<String>, ServerGroupParsingError> {
+        //! Filters for servergroups with conflicting ports to self.
+        //! Returns a vec of their names.
+        let server_groups: Vec<ServerGroup> = Self::get_server_groups()?
+            .into_iter()
+            .filter(|sg| sg.name != self.name)
+            .collect();
+        Ok(server_groups
+            .into_iter()
+            .filter_map(|sg| {
+                Some(GameOptions::get_if_port_section_conflict(
+                    self.port_section,
+                    sg.port_section,
+                ))
+                .filter(|&x| x)
+                .map(|_| sg.name)
+            })
+            .collect())
+    }
+
+    fn get_all_other_port_sections(&self) -> Result<Vec<u16>, ServerGroupParsingError> {
+        //! Returns a vec of cached port sections that don't include self (even if it is cached).
+        let server_groups: Vec<ServerGroup> = Self::get_server_groups()?;
+        Ok(server_groups
+            .into_iter()
+            .filter_map(|sg| Some(sg.name != self.name).map(|_| sg.port_section))
+            .collect())
+    }
+
+    pub fn create(&mut self) -> Result<(), redis::RedisError> {
         let config: Config = Config::get_config();
         let mut conn = connect(&config);
         let redis_key: String = format!("servergroups.{}", self.prefix);
         let sg = Self::get_server_group(&redis_key).ok();
         if sg.is_some() {
-            // exists in redis already
-            let _: () = redis::cmd("SADD") // just in case
+            // if exists in redis already
+            let _: () = redis::cmd("SADD") // even if it exists in set
                 .arg("servergroups")
                 .arg(&self.prefix)
                 .query(&mut conn)?;
             return Ok(());
         }
-        let port_sections: Vec<u16> = Self::get_all_port_sections()?;
-        if GameOptions::check_port_section_conflicts(self.port_section, &port_sections) {
-            return Err(ServerGroupParsingError::new(format!(
-                "Error while creating ServerGroup in redis: port section conflict found for `servergroups.{}`",
-                self.prefix
-            ))
-            .into());
-        }
+        self.minimize_port_collisions()?; // no more conflicting ports
         let params: HashMap<String, String> = self.clone().into();
         let _: () = redis::cmd("HSET")
             .arg(redis_key)

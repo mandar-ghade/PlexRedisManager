@@ -13,15 +13,8 @@ use crate::{
     error::parsing_error::ServerGroupParsingError,
     game::r#type::GameType,
     region::Region,
-    server::{minecraft::MinecraftServer, server_group::ServerGroup},
+    server::{generic::GenericServer, minecraft::MinecraftServer, server_group::ServerGroup},
 };
-
-#[allow(dead_code)]
-enum GenericServer {
-    Lobby,
-    ClansHub,
-    BetaHub,
-}
 
 fn get_best_server_test(cfg: &mut Config, group: &ServerGroup) -> () {
     let dedicated_servers = &mut cfg.dedicated_servers;
@@ -37,12 +30,15 @@ fn get_best_server_test(cfg: &mut Config, group: &ServerGroup) -> () {
 }
 
 fn main() {
-    let game: Result<Game, ServerGroupParsingError> = Game::try_from(GameType::CakeWars4);
-    let cake_wars: ServerGroup = ServerGroup::from(game.unwrap());
-    let _ = cake_wars.create();
-    dbg!(&cake_wars);
-    let mut _cfg = Config::get_config();
-    //get_best_server_test(&mut cfg, &clans_hub);
-    dbg!(&_cfg);
+    let game: Result<Game, ServerGroupParsingError> = Game::try_from(GameType::MixedArcade);
+    let mut _mixed_arcade: ServerGroup = ServerGroup::from(game.unwrap());
+    dbg!(&_mixed_arcade);
+    //let mut _cfg = Config::get_config();
+    //get_best_server_test(&mut cfg, &mixed_arcade);
+    //dbg!(&_cfg);
+
+    //let lobby = GenericServer::Lobby.to_server_group();
+    //dbg!(&lobby);
+
     //let server_statuses = MinecraftServer::get_all();
 }

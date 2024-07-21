@@ -2,7 +2,10 @@ use std::collections::HashMap;
 
 use lazy_static::lazy_static;
 
-use crate::region::Region;
+use crate::{
+    region::Region,
+    server::{generic::GenericServer, server_group::ServerGroup},
+};
 
 use super::{booster_group::BoosterGroup, options::GameOptions, r#type::GameType};
 
@@ -26,6 +29,7 @@ lazy_static! {
     ]);
     pub static ref GAME_TO_BOOSTER_GROUP: HashMap<GameType, BoosterGroup> = HashMap::from([
         (GameType::Micro, BoosterGroup::Arcade),
+        (GameType::MixedArcade, BoosterGroup::Arcade),
         (GameType::Draw, BoosterGroup::Draw_My_Thing),
         (GameType::MineStrike, BoosterGroup::Arcade),
         (GameType::TurfWars, BoosterGroup::Arcade),
@@ -126,6 +130,62 @@ lazy_static! {
         (GameType::ChampionsDominate, GameType::ChampionsCTF),
         (GameType::CakeWars4, GameType::CakeWarsDuos),
     ]);
+    pub static ref MIXED_ARCADE_GAMES: Vec<GameType> = vec![GameType::BaconBrawl, GameType::Bridges,
+                                                            GameType::ChampionsCTF, GameType::ChampionsTDM,
+                                                            GameType::ChampionsDominate, GameType::Lobbers,
+                                                            GameType::DeathTag, GameType::DragonEscape,
+                                                            GameType::Dragons];
+    pub static ref GENERIC_TO_SERVER_GROUP: HashMap<GenericServer, ServerGroup> = HashMap::from([
+        (GenericServer::Lobby, ServerGroup {
+            name: "Lobby".to_string(),
+            prefix: "Lobby".to_string(),
+            ram: 512,
+            cpu: 1,
+            total_servers: 0,
+            joinable_servers: 0,
+            port_section: 25700, // changes automatically
+            uptimes: None,
+            arcade_group: false,
+            world_zip: "lobby.zip".to_string(),
+            plugin: "Hub.jar".to_string(),
+            config_path: "plugins/Hub".to_string(),
+            host: None,
+            min_players: 1,
+            max_players: 50,
+            pvp: false,
+            tournament: false,
+            tournament_points: false,
+            hard_max_player_cap: false,
+            games: None,
+            modes: None,
+            booster_group: None,
+            server_type: "dedicated".to_string(),
+            add_no_cheat: true,
+            add_world_edit: false,
+            team_rejoin: false,
+            team_auto_join: false,
+            team_force_balance: false,
+            game_auto_start: false,
+            game_timeout: false,
+            game_voting: false,
+            map_voting: false,
+            reward_gems: false,
+            reward_items: false,
+            reward_stats: false,
+            reward_achievements: false,
+            hotbar_inventory: false,
+            hotbar_hub_clock: false,
+            player_kick_idle: false,
+            staff_only: false,
+            whitelist: false,
+            resource_pack: None,
+            region: Region::US,
+            team_server_key: None,
+            portal_bottom_corner_location: None,
+            portal_top_corner_location: None,
+            npc_name: None,
+        })
+    ]);
     pub static ref CUSTOM_GAME_OPTIONS: HashMap<GameType, GameOptions> = HashMap::from([
         (
             GameType::Clans,
@@ -136,7 +196,7 @@ lazy_static! {
                 host: None,
                 min_players: 1,
                 max_players: 50,
-                port_section: 25565, // changes automatically
+                port_section: 25700, // changes automatically
                 arcade_group: false,
                 world_zip: "clans.zip".to_string(),
                 plugin: "Clans.jar".to_string(),
@@ -180,7 +240,7 @@ lazy_static! {
                 host: None,
                 min_players: 1,
                 max_players: 50,
-                port_section: 25565, // changes automatically
+                port_section: 25700, // changes automatically
                 arcade_group: false,
                 world_zip: "clanshub.zip".to_string(),
                 plugin: "ClansHub.jar".to_string(),
