@@ -63,17 +63,7 @@ impl Default for Config {
             },
             monitor_info: MonitorInfo::default(),
             dedicated_servers: DedicatedServers {
-                servers: Vec::from([DedicatedServer {
-                    name: "ExampleServer".into(),
-                    public_address: "127.0.0.1".into(),
-                    private_address: "127.0.0.1".into(),
-                    region: Region::US,
-                    available_cpu: 6,
-                    available_ram: 6000,
-                    max_cpu: 6,
-                    max_ram: 6000,
-                    server_count_map: HashMap::new(),
-                }]),
+                servers: Vec::new(),
             },
         }
     }

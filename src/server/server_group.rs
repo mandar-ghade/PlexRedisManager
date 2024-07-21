@@ -1,7 +1,9 @@
+use redis::RedisError;
 use serde::Deserialize;
 
 use crate::config::models::Config;
 use crate::error::parsing_error::ServerGroupParsingError;
+use crate::game::options::GameOptions;
 use crate::game::utils::GAME_TO_SERVER_PREFIX;
 use crate::game::Game;
 use crate::redis::connect;
@@ -138,7 +140,7 @@ fn parse_optional_str<'a>(
 }
 
 impl From<Game> for ServerGroup {
-    //! Generally handle one conversion and creation together,
+    //! Generally handle conversions and creations together,
     //! Or it could lead to port section conflicts.
     fn from(game: Game) -> Self {
         Self {
@@ -361,7 +363,33 @@ impl From<ServerGroup> for HashMap<String, String> {
     }
 }
 
+impl From<ServerGroupParsingError> for RedisError {
+    fn from(err: ServerGroupParsingError) -> Self {
+        (
+            redis::ErrorKind::ParseError,
+            "ServerGroup parsing error",
+            err.msg,
+        )
+            .into()
+    }
+}
+
 impl ServerGroup {
+    pub fn delete(&self) -> Result<(), redis::RedisError> {
+        let config: Config = Config::get_config();
+        let mut conn = connect(&config);
+        let redis_key: String = format!("servergroups.{}", self.prefix);
+        if let Some(_) = Self::get_server_group(&redis_key).ok() {
+            let _: () = redis::cmd("DEL").arg(redis_key).query(&mut conn)?;
+        }
+        let _: () = redis::cmd("SREM")
+            .arg("servergroups")
+            .arg(&self.prefix)
+            .query(&mut conn)?;
+
+        Ok(())
+    }
+
     pub fn create(&self) -> Result<(), redis::RedisError> {
         let config: Config = Config::get_config();
         let mut conn = connect(&config);
@@ -369,12 +397,28 @@ impl ServerGroup {
         let sg = Self::get_server_group(&redis_key).ok();
         if sg.is_some() {
             // exists in redis already
+            let _: () = redis::cmd("SADD") // just in case
+                .arg("servergroups")
+                .arg(&self.prefix)
+                .query(&mut conn)?;
             return Ok(());
+        }
+        let port_sections: Vec<u16> = Self::get_all_port_sections()?;
+        if GameOptions::check_port_section_conflicts(self.port_section, &port_sections) {
+            return Err(ServerGroupParsingError::new(format!(
+                "Error while creating ServerGroup in redis: port section conflict found for `servergroups.{}`",
+                self.prefix
+            ))
+            .into());
         }
         let params: HashMap<String, String> = self.clone().into();
         let _: () = redis::cmd("HSET")
             .arg(redis_key)
             .arg(params)
+            .query(&mut conn)?;
+        let _: () = redis::cmd("SADD")
+            .arg("servergroups")
+            .arg(&self.prefix)
             .query(&mut conn)?;
         Ok(())
     }

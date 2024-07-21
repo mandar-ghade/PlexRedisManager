@@ -388,10 +388,15 @@ impl MinecraftServer {
         return self.player_count == 0;
     }
 
+    fn is_dead_server(&self) -> bool {
+        //? Returns `true` if player_count is None and server has been online for over 2 minutes.
+        return self.is_empty() && self.get_uptime_as_seconds() >= 150;
+    }
+
     pub fn get_empty_servers() -> Result<Vec<Self>, MinecraftServerError> {
         Ok(Self::get_all()?
             .into_iter()
-            .filter(|sv| sv.is_empty() && sv.get_uptime_as_seconds() >= 150)
+            .filter(|sv| sv.is_empty() && sv.get_uptime_as_seconds() >= 150) // offline
             .collect())
     }
 

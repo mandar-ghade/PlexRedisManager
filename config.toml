@@ -15,8 +15,8 @@ name = "localhost"
 public_address = "127.0.0.1"
 private_address = "127.0.0.1"
 region = "US"
-cpu = 6
-ram = 6000
+cpu = 6 # max cpu 
+ram = 6000 # max ram in MB
 
 # FOR MORE DEDICATED SERVERS: EXTEND USING FORMAT OUTLINED BELOW
 # [[dedicated_servers.servers]]

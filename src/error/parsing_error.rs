@@ -2,7 +2,7 @@ use std::{error::Error, fmt::Display};
 
 #[derive(Debug)]
 pub struct ServerGroupParsingError {
-    msg: String,
+    pub msg: String,
 }
 
 impl Display for ServerGroupParsingError {

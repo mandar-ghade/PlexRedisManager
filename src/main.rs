@@ -1,4 +1,5 @@
 mod config;
+mod ctx_manager;
 mod error;
 mod game;
 mod redis;
@@ -36,8 +37,10 @@ fn get_best_server_test(cfg: &mut Config, group: &ServerGroup) -> () {
 }
 
 fn main() {
-    let game: Result<Game, ServerGroupParsingError> = Game::try_from(GameType::ClansHub);
-    let clans_hub: ServerGroup = ServerGroup::from(game.unwrap());
+    let game: Result<Game, ServerGroupParsingError> = Game::try_from(GameType::CakeWars4);
+    let cake_wars: ServerGroup = ServerGroup::from(game.unwrap());
+    let _ = cake_wars.create();
+    dbg!(&cake_wars);
     let mut _cfg = Config::get_config();
     //get_best_server_test(&mut cfg, &clans_hub);
     dbg!(&_cfg);
