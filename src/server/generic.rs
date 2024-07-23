@@ -23,7 +23,9 @@ impl GenericServer {
             .map(|sg| sg.clone())
             .map_or(Ok(None), |mut group| {
                 group.eliminate_port_collisions(ctx)?;
-                group.load_existing_cache(ctx);
+                if group.is_cached(ctx) {
+                    group.load_existing_cache(ctx);
+                }
                 Ok(Some(group))
             })
     }
