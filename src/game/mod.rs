@@ -1,3 +1,4 @@
+use crate::context_manager::ContextManager;
 use crate::error::parsing_error::ServerGroupParsingError;
 use crate::game::options::GameOptions;
 use crate::game::r#type::GameType;
@@ -14,24 +15,23 @@ pub struct Game {
     pub options: GameOptions,
 }
 
-impl TryFrom<GameType> for Game {
-    type Error = ServerGroupParsingError;
-    fn try_from(game: GameType) -> Result<Self, Self::Error> {
+impl Game {
+    pub fn from_game_type(
+        game: GameType,
+        ctx: &mut ContextManager,
+    ) -> Result<Self, ServerGroupParsingError> {
         Ok(Self {
             name: game,
-            options: GameOptions::try_from(game)?,
+            options: GameOptions::from_game_type(game, ctx)?,
         })
     }
-}
 
-impl TryFrom<&str> for Game {
-    type Error = ServerGroupParsingError;
-    fn try_from(game: &str) -> Result<Self, Self::Error> {
-        let game_name = GameType::from_str(game)
+    pub fn from_str(game: &str, ctx: &mut ContextManager) -> Result<Self, ServerGroupParsingError> {
+        let game_name: GameType = GameType::from_str(game)
             .map_err(|err| ServerGroupParsingError::new(format!("Game not found: {:?}", err)))?;
         Ok(Self {
             name: game_name,
-            options: GameOptions::try_from(game_name)?,
+            options: GameOptions::from_game_type(game_name, ctx)?,
         })
     }
 }

@@ -1,21 +1,21 @@
 use crate::{config::models::Config, server::dedicated::collection::DedicatedServers};
 
-pub struct CtxManager {
+pub struct ContextManager {
     config: Config,
     connection: redis::Connection,
 }
 
-impl CtxManager {
-    pub fn get_dedicated_servers(&self) -> &mut DedicatedServers {
+impl ContextManager {
+    pub fn get_dedicated_servers(&mut self) -> &mut DedicatedServers {
         &mut self.config.dedicated_servers
     }
 
-    pub fn get_config(&self) -> Config {
-        self.config
+    pub fn get_config(&mut self) -> &mut Config {
+        &mut self.config
     }
 
-    pub fn get_connection(&self) -> redis::Connection {
-        self.connection
+    pub fn get_connection(&mut self) -> &mut redis::Connection {
+        &mut self.connection
     }
 
     pub fn new() -> Self {

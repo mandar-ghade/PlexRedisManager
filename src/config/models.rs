@@ -16,7 +16,7 @@ use crate::{
 
 #[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct Config {
-    pub redis_conn: RedisConfig,
+    redis_conn: RedisConfig,
     pub sys_info: System,
     pub monitor_info: MonitorInfo,
     pub dedicated_servers: DedicatedServers,
@@ -77,6 +77,16 @@ fn dedicated_server_with_defaults(ds: &mut DedicatedServer) -> DedicatedServer {
 }
 
 impl Config {
+    pub fn get_redis_connection(&self) -> redis::Connection {
+        redis::Client::open(format!(
+            "redis://{}:{}",
+            self.redis_conn.address, self.redis_conn.port
+        ))
+        .expect("Redis connection could not be made")
+        .get_connection()
+        .expect("Redis client could not be opened")
+    }
+
     pub fn get_config() -> Self {
         let mut file = File::open("config.toml").expect("File should have been expected.");
         let mut toml_str = String::new();

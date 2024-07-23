@@ -1,18 +1,17 @@
 use rand::rngs::ThreadRng;
 use rand::Rng;
 use redis::RedisError;
-use serde::Deserialize;
 
 use crate::config::models::Config;
+use crate::context_manager::ContextManager;
 use crate::error::parsing_error::ServerGroupParsingError;
 use crate::game::options::GameOptions;
 use crate::game::utils::GAME_TO_SERVER_PREFIX;
 use crate::game::Game;
-use crate::redis::connect;
 use crate::region::Region;
 use std::collections::HashMap;
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq, Deserialize)] // deserialize isn't used.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct ServerGroup {
     pub name: String,
     pub prefix: String,
@@ -141,8 +140,19 @@ fn parse_optional_str<'a>(
         .cloned())
 }
 
-impl From<Game> for ServerGroup {
-    fn from(game: Game) -> Self {
+impl From<ServerGroupParsingError> for RedisError {
+    fn from(err: ServerGroupParsingError) -> Self {
+        (
+            redis::ErrorKind::ParseError,
+            "ServerGroup parsing error",
+            err.msg,
+        )
+            .into()
+    }
+}
+
+impl ServerGroup {
+    pub fn from_game(game: Game) -> Self {
         Self {
             name: game.options.prefix.clone(),
             prefix: game.options.prefix,
@@ -198,19 +208,8 @@ impl From<Game> for ServerGroup {
             npc_name: game.options.npc_name,
         }
     }
-}
 
-impl TryFrom<&str> for ServerGroup {
-    /// Attempts to convert from str slice to ServerGroup.
-    type Error = ServerGroupParsingError;
-    fn try_from(group: &str) -> Result<Self, Self::Error> {
-        Self::get_server_group(&format!("servergroups.{}", group))
-    }
-}
-
-impl TryFrom<HashMap<String, String>> for ServerGroup {
-    type Error = ServerGroupParsingError;
-    fn try_from(map: HashMap<String, String>) -> Result<Self, Self::Error> {
+    pub fn from_hashmap(map: HashMap<String, String>) -> Result<Self, ServerGroupParsingError> {
         if map.is_empty() {
             return Err(ServerGroupParsingError::new(
                 "ServerGroup not found.".into(),
@@ -281,106 +280,108 @@ impl TryFrom<HashMap<String, String>> for ServerGroup {
         };
         Ok(server_group)
     }
-}
 
-impl From<ServerGroup> for HashMap<String, String> {
-    fn from(group: ServerGroup) -> Self {
+    /// Loads from cache or default
+    pub fn from_str(
+        group: &str,
+        ctx: &mut ContextManager,
+    ) -> Result<Self, ServerGroupParsingError> {
+        Self::get_server_group(&format!("servergroups.{}", group), ctx)
+    }
+
+    pub fn to_hashmap(&self) -> HashMap<String, String> {
         HashMap::from([
-            ("name".into(), group.name),
-            ("prefix".into(), group.prefix),
-            ("ram".into(), group.ram.to_string()),
-            ("cpu".into(), group.cpu.to_string()),
-            ("totalServers".into(), group.total_servers.to_string()),
-            ("joinableServers".into(), group.joinable_servers.to_string()),
-            ("portSection".into(), group.port_section.to_string()),
-            ("uptimes".into(), group.uptimes.unwrap_or(String::new())),
-            ("arcadeGroup".into(), group.arcade_group.to_string()),
-            ("worldZip".into(), group.world_zip),
-            ("plugin".into(), group.plugin),
-            ("configPath".into(), group.config_path),
-            ("host".into(), group.host.unwrap_or(String::new())),
-            ("minPlayers".into(), group.min_players.to_string()),
-            ("maxPlayers".into(), group.max_players.to_string()),
-            ("pvp".into(), group.pvp.to_string()),
-            ("tournament".into(), group.tournament.to_string()),
+            ("name".into(), self.name.clone()),
+            ("prefix".into(), self.prefix.clone()),
+            ("ram".into(), self.ram.to_string()),
+            ("cpu".into(), self.cpu.to_string()),
+            ("totalServers".into(), self.total_servers.to_string()),
+            ("joinableServers".into(), self.joinable_servers.to_string()),
+            ("portSection".into(), self.port_section.to_string()),
+            (
+                "uptimes".into(),
+                self.uptimes.clone().unwrap_or(String::new()),
+            ),
+            ("arcadeGroup".into(), self.arcade_group.to_string()),
+            ("worldZip".into(), self.world_zip.clone()),
+            ("plugin".into(), self.plugin.clone()),
+            ("configPath".into(), self.config_path.clone()),
+            ("host".into(), self.host.clone().unwrap_or(String::new())),
+            ("minPlayers".into(), self.min_players.to_string()),
+            ("maxPlayers".into(), self.max_players.to_string()),
+            ("pvp".into(), self.pvp.to_string()),
+            ("tournament".into(), self.tournament.to_string()),
             (
                 "tournamentPoints".into(),
-                group.tournament_points.to_string(),
+                self.tournament_points.to_string(),
             ),
             (
                 "hardMaxPlayerCap".into(),
-                group.hard_max_player_cap.to_string(),
+                self.hard_max_player_cap.to_string(),
             ),
-            ("games".into(), group.games.unwrap_or(String::new())),
-            ("modes".into(), group.modes.unwrap_or(String::new())),
+            ("games".into(), self.games.clone().unwrap_or(String::new())),
+            ("modes".into(), self.modes.clone().unwrap_or(String::new())),
             (
                 "boosterGroup".into(),
-                group.booster_group.unwrap_or(String::new()),
+                self.booster_group.clone().unwrap_or(String::new()),
             ),
-            ("serverType".into(), group.server_type),
-            ("addNoCheat".into(), group.add_no_cheat.to_string()),
-            ("addWorldEdit".into(), group.add_world_edit.to_string()),
-            ("teamRejoin".into(), group.team_rejoin.to_string()),
-            ("teamAutoJoin".into(), group.team_auto_join.to_string()),
+            ("serverType".into(), self.server_type.clone()),
+            ("addNoCheat".into(), self.add_no_cheat.to_string()),
+            ("addWorldEdit".into(), self.add_world_edit.to_string()),
+            ("teamRejoin".into(), self.team_rejoin.to_string()),
+            ("teamAutoJoin".into(), self.team_auto_join.to_string()),
             (
                 "teamForceBalance".into(),
-                group.team_force_balance.to_string(),
+                self.team_force_balance.to_string(),
             ),
-            ("gameAutoStart".into(), group.game_auto_start.to_string()),
-            ("gameTimeout".into(), group.game_timeout.to_string()),
-            ("gameVoting".into(), group.game_voting.to_string()),
-            ("mapVoting".into(), group.map_voting.to_string()),
-            ("rewardGems".into(), group.reward_gems.to_string()),
-            ("rewardItems".into(), group.reward_items.to_string()),
-            ("rewardStats".into(), group.reward_stats.to_string()),
+            ("gameAutoStart".into(), self.game_auto_start.to_string()),
+            ("gameTimeout".into(), self.game_timeout.to_string()),
+            ("gameVoting".into(), self.game_voting.to_string()),
+            ("mapVoting".into(), self.map_voting.to_string()),
+            ("rewardGems".into(), self.reward_gems.to_string()),
+            ("rewardItems".into(), self.reward_items.to_string()),
+            ("rewardStats".into(), self.reward_stats.to_string()),
             (
                 "rewardAchievements".into(),
-                group.reward_achievements.to_string(),
+                self.reward_achievements.to_string(),
             ),
-            ("hotbarInventory".into(), group.hotbar_inventory.to_string()),
-            ("hotbarHubClock".into(), group.hotbar_hub_clock.to_string()),
-            ("playerKickIdle".into(), group.player_kick_idle.to_string()),
-            ("staffOnly".into(), group.staff_only.to_string()),
-            ("whitelist".into(), group.whitelist.to_string()),
+            ("hotbarInventory".into(), self.hotbar_inventory.to_string()),
+            ("hotbarHubClock".into(), self.hotbar_hub_clock.to_string()),
+            ("playerKickIdle".into(), self.player_kick_idle.to_string()),
+            ("staffOnly".into(), self.staff_only.to_string()),
+            ("whitelist".into(), self.whitelist.to_string()),
             (
                 "resourcePack".into(),
-                group.resource_pack.unwrap_or(String::new()),
+                self.resource_pack.clone().unwrap_or(String::new()),
             ),
-            ("region".into(), group.region.into()),
+            ("region".into(), self.region.clone().to_string()),
             (
                 "teamServerKey".into(),
-                group.team_server_key.unwrap_or(String::new()),
+                self.team_server_key.clone().unwrap_or(String::new()),
             ),
             (
                 "portalBottomCornerLocation".into(),
-                group.portal_bottom_corner_location.unwrap_or(String::new()),
+                self.portal_bottom_corner_location
+                    .clone()
+                    .unwrap_or(String::new()),
             ),
             (
                 "portalTopCornerLocation".into(),
-                group.portal_top_corner_location.unwrap_or(String::new()),
+                self.portal_top_corner_location
+                    .clone()
+                    .unwrap_or(String::new()),
             ),
-            ("npcName".into(), group.npc_name.unwrap_or(String::new())),
+            (
+                "npcName".into(),
+                self.npc_name.clone().unwrap_or(String::new()),
+            ),
         ])
     }
-}
 
-impl From<ServerGroupParsingError> for RedisError {
-    fn from(err: ServerGroupParsingError) -> Self {
-        (
-            redis::ErrorKind::ParseError,
-            "ServerGroup parsing error",
-            err.msg,
-        )
-            .into()
-    }
-}
-
-impl ServerGroup {
-    pub fn load_existing_cache(&mut self) -> () {
-        //! Changes ServerGroup into cached value,
-        //! if exists or ServerGroup stays the same.
+    pub fn load_existing_cache(&mut self, ctx: &mut ContextManager) -> () {
+        //! ServerGroup returns to cached redis state if exists.
         let redis_key: String = format!("servergroups.{}", self.prefix);
-        let cached: Option<ServerGroup> = Self::get_server_group(&redis_key).ok();
+        let cached: Option<ServerGroup> = Self::get_server_group(&redis_key, ctx).ok();
         if cached.is_none() {
             ()
         }
@@ -388,32 +389,35 @@ impl ServerGroup {
         ()
     }
 
-    pub fn is_cached(&self) -> bool {
+    pub fn is_cached(&self, ctx: &mut ContextManager) -> bool {
         //! Returns if ServerGroup was cached in redis.
         let redis_key: String = format!("servergroups.{}", self.prefix);
-        Self::get_server_group(&redis_key).is_ok()
+        Self::get_server_group(&redis_key, ctx).is_ok()
     }
 
-    pub fn delete(&self) -> Result<(), redis::RedisError> {
+    pub fn delete(&self, ctx: &mut ContextManager) -> Result<(), redis::RedisError> {
         //! Deletes ServerGroup from cache.
-        let config: Config = Config::get_config();
-        let mut conn = connect(&config);
         let redis_key: String = format!("servergroups.{}", self.prefix);
-        if self.is_cached() {
-            let _: () = redis::cmd("DEL").arg(redis_key).query(&mut conn)?;
+        if self.is_cached(ctx) {
+            let _: () = redis::cmd("DEL")
+                .arg(redis_key)
+                .query(ctx.get_connection())?;
         }
         let _: () = redis::cmd("SREM")
             .arg("servergroups")
             .arg(&self.prefix)
-            .query(&mut conn)?;
+            .query(ctx.get_connection())?;
         Ok(())
     }
 
-    pub fn eliminate_port_collisions(&mut self) -> Result<(), ServerGroupParsingError> {
+    pub fn eliminate_port_collisions(
+        &mut self,
+        ctx: &mut ContextManager,
+    ) -> Result<(), ServerGroupParsingError> {
         //! Eliminates port collisions between `self` and cached `ServerGroup`s by generating a new
         //! port section.
         //! (Call this function before caching)
-        self.reset_port_section_if_invalid().map_err(|err| {
+        self.reset_port_section_if_invalid(ctx).map_err(|err| {
             ServerGroupParsingError::new(format!(
                 "Error while executing `eliminate_port_collisions` in ServerGroup (could not reset port): {:?}",
                 err
@@ -422,12 +426,15 @@ impl ServerGroup {
         Ok(())
     }
 
-    fn get_port_section_is_invalid(&self) -> Result<bool, ServerGroupParsingError> {
+    fn get_port_section_is_invalid(
+        &self,
+        ctx: &mut ContextManager,
+    ) -> Result<bool, ServerGroupParsingError> {
         //! Returns `true` if port section conflicts with another group's cached port section, otherwise `false`.
         //! Raises ServerGroupParsingError if there are issues while fetching existing port_sections.
         Ok(GameOptions::check_port_section_conflicts(
             self.port_section,
-            &self.get_all_other_port_sections()?,
+            &self.get_all_other_port_sections(ctx)?,
         ))
     }
 
@@ -436,19 +443,25 @@ impl ServerGroup {
         self.port_section = rng.gen_range(25566..26001);
     }
 
-    fn reset_port_section_if_invalid(&mut self) -> Result<(), ServerGroupParsingError> {
+    fn reset_port_section_if_invalid(
+        &mut self,
+        ctx: &mut ContextManager,
+    ) -> Result<(), ServerGroupParsingError> {
         //! Resets port section if it conflicts with another group's cached port section.
         let mut rng = rand::thread_rng();
-        while self.get_port_section_is_invalid()? {
+        while self.get_port_section_is_invalid(ctx)? {
             self.get_random_port_section(&mut rng);
         }
         Ok(())
     }
 
-    fn find_port_conflicts(&mut self) -> Result<Vec<String>, ServerGroupParsingError> {
+    fn find_port_conflicts(
+        &mut self,
+        ctx: &mut ContextManager,
+    ) -> Result<Vec<String>, ServerGroupParsingError> {
         //! Filters for servergroups with conflicting ports to self.
         //! Returns a vec of their names.
-        let server_groups: Vec<ServerGroup> = Self::get_server_groups()?
+        let server_groups: Vec<ServerGroup> = Self::get_server_groups(ctx)?
             .into_iter()
             .filter(|sg| sg.name != self.name)
             .collect();
@@ -465,44 +478,48 @@ impl ServerGroup {
             .collect())
     }
 
-    fn get_all_other_port_sections(&self) -> Result<Vec<u16>, ServerGroupParsingError> {
+    fn get_all_other_port_sections(
+        &self,
+        ctx: &mut ContextManager,
+    ) -> Result<Vec<u16>, ServerGroupParsingError> {
         //! Returns a vec of cached port sections that don't include self (even if it is cached).
-        let server_groups: Vec<ServerGroup> = Self::get_server_groups()?;
+        let server_groups: Vec<ServerGroup> = Self::get_server_groups(ctx)?;
         Ok(server_groups
             .into_iter()
             .filter_map(|sg| Some(sg.name != self.name).map(|_| sg.port_section))
             .collect())
     }
 
-    pub fn create(&mut self) -> Result<(), redis::RedisError> {
-        let config: Config = Config::get_config();
-        let mut conn = connect(&config);
+    pub fn create(&mut self, ctx: &mut ContextManager) -> Result<(), redis::RedisError> {
         let redis_key: String = format!("servergroups.{}", self.prefix);
-        let sg = Self::get_server_group(&redis_key).ok();
+        let sg = Self::get_server_group(&redis_key, ctx).ok();
         if sg.is_some() {
             // if exists in redis already
             let _: () = redis::cmd("SADD") // even if it exists in set
                 .arg("servergroups")
                 .arg(&self.prefix)
-                .query(&mut conn)?;
+                .query(ctx.get_connection())?;
             return Ok(());
         }
-        self.eliminate_port_collisions()?; // no more conflicting ports
-        let params: HashMap<String, String> = self.clone().into();
+        self.eliminate_port_collisions(ctx)?; // no more conflicting ports
+        let params: HashMap<String, String> = self.to_hashmap();
         let _: () = redis::cmd("HSET")
             .arg(redis_key)
             .arg(params)
-            .query(&mut conn)?;
+            .query(ctx.get_connection())?;
         let _: () = redis::cmd("SADD")
             .arg("servergroups")
             .arg(&self.prefix)
-            .query(&mut conn)?;
+            .query(ctx.get_connection())?;
         Ok(())
     }
 
-    pub fn get_server_group(redis_key: &String) -> Result<ServerGroup, ServerGroupParsingError> {
+    pub fn get_server_group(
+        redis_key: &String,
+        ctx: &mut ContextManager,
+    ) -> Result<ServerGroup, ServerGroupParsingError> {
         let config: Config = Config::get_config();
-        let mut conn = connect(&config);
+        let mut conn = ctx.get_connection();
         let redis_data: HashMap<String, String> = redis::cmd("HGETALL")
             .arg(redis_key)
             .query(&mut conn)
@@ -511,12 +528,13 @@ impl ServerGroup {
                     "Redis data for ServerGroup could not be retrieved".into(),
                 )
             })?;
-        Ok(Self::try_from(redis_data)?)
+        Ok(Self::from_hashmap(redis_data)?)
     }
 
-    pub fn get_server_groups() -> Result<Vec<ServerGroup>, ServerGroupParsingError> {
-        let config: Config = Config::get_config();
-        let mut conn = connect(&config);
+    pub fn get_server_groups(
+        ctx: &mut ContextManager,
+    ) -> Result<Vec<ServerGroup>, ServerGroupParsingError> {
+        let mut conn = ctx.get_connection();
         let server_groups: Vec<String> = redis::cmd("KEYS")
             .arg("servergroups.*")
             .query(&mut conn)
@@ -528,12 +546,14 @@ impl ServerGroup {
             })?;
         server_groups
             .iter()
-            .map(|sg| Self::get_server_group(sg))
+            .map(|sg| Self::get_server_group(sg, ctx))
             .collect()
     }
 
-    pub fn get_all_port_sections() -> Result<Vec<u16>, ServerGroupParsingError> {
-        let server_groups: Vec<ServerGroup> = Self::get_server_groups()?;
+    pub fn get_all_port_sections(
+        ctx: &mut ContextManager,
+    ) -> Result<Vec<u16>, ServerGroupParsingError> {
+        let server_groups: Vec<ServerGroup> = Self::get_server_groups(ctx)?;
         let ports: Vec<u16> = server_groups
             .iter()
             .map(|group| group.port_section)

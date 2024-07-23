@@ -5,10 +5,7 @@ use redis::{FromRedisValue, RedisError};
 use strum_macros::EnumString;
 use thiserror::Error;
 
-use crate::{
-    config::models::Config, error::parsing_error::ServerGroupParsingError, game::r#type::GameType,
-    redis::connect, region::Region,
-};
+use crate::{context_manager::ContextManager, game::r#type::GameType, region::Region};
 
 use super::server_group::ServerGroup;
 
@@ -268,17 +265,15 @@ fn parse_datetime(
 fn parse_server_group(
     map: &serde_json::Map<String, serde_json::Value>,
     key: &str,
+    ctx: &mut ContextManager,
 ) -> Result<ServerGroup, MinecraftServerError> {
-    parse_string_from_map(map, key)?
-        .as_str()
-        .try_into()
-        .map_err(|err| {
-            format!(
-                "Field `{}` could not be parsed to ServerGroup: {:?}",
-                key, err
-            )
-            .into()
-        })
+    ServerGroup::from_str(parse_string_from_map(map, key)?.as_str(), ctx).map_err(|err| {
+        format!(
+            "Field `{}` could not be parsed to ServerGroup: {:?}",
+            key, err
+        )
+        .into()
+    })
 }
 
 fn parse_json_motd(
@@ -305,9 +300,10 @@ impl TryFrom<serde_json::Value> for MinecraftServer {
     type Error = MinecraftServerError;
     fn try_from(map: serde_json::Value) -> Result<Self, Self::Error> {
         let map: serde_json::Map<String, serde_json::Value> = json_to_map(&map)?;
+        let mut ctx: ContextManager = ContextManager::new(); // special case
         Ok(Self {
             name: parse_string_from_map(&map, "_name")?,
-            group: parse_server_group(&map, "_group")?,
+            group: parse_server_group(&map, "_group", &mut ctx)?,
             motd: parse_json_motd(&map, "_motd")?,
             player_count: parse_u8_from_map(&map, "_playerCount")?,
             max_player_count: parse_u8_from_map(&map, "_maxPlayerCount")?,
@@ -353,22 +349,21 @@ impl FromRedisValue for MinecraftServer {
 impl MinecraftServer {
     pub fn from_server_group(
         server_group: &ServerGroup,
+        ctx: &mut ContextManager,
     ) -> Result<Vec<Self>, MinecraftServerError> {
-        let config: Config = Config::get_config();
-        let mut conn = connect(&config);
         let server_statuses: Vec<String> = redis::cmd("KEYS")
             .arg(format!(
                 "serverstatus.minecraft.{}.{}-*",
                 server_group.region, server_group.prefix
             ))
-            .query(&mut conn)
+            .query(ctx.get_connection())
             .map_err(|_| -> MinecraftServerError {
                 "Redis data for MinecraftServer could not be retrieved. MinecraftServer iteration failed."
                     .to_string().into()
             })?;
         server_statuses
             .iter()
-            .map(|sg| Self::get_from_raw_str(sg.as_str()))
+            .map(|sg| Self::get_from_raw_str(sg.as_str(), ctx))
             .collect()
     }
 
@@ -393,45 +388,48 @@ impl MinecraftServer {
         return self.is_empty() && self.get_uptime_as_seconds() >= 150;
     }
 
-    pub fn get_empty_servers() -> Result<Vec<Self>, MinecraftServerError> {
-        Ok(Self::get_all()?
+    pub fn get_empty_servers(ctx: &mut ContextManager) -> Result<Vec<Self>, MinecraftServerError> {
+        Ok(Self::get_all(ctx)?
             .into_iter()
             .filter(|sv| sv.is_empty() && sv.get_uptime_as_seconds() >= 150) // offline
             .collect())
     }
 
-    pub fn get_all() -> Result<Vec<Self>, MinecraftServerError> {
-        let config: Config = Config::get_config();
-        let mut conn = connect(&config);
+    pub fn get_all(ctx: &mut ContextManager) -> Result<Vec<Self>, MinecraftServerError> {
         let server_statuses: Vec<String> = redis::cmd("KEYS")
             .arg("serverstatus.minecraft.*.*")
-            .query(&mut conn)
+            .query(ctx.get_connection())
             .map_err(|_| -> MinecraftServerError {
                 "Redis data for MinecraftServer could not be retrieved. MinecraftServer iteration failed."
                     .to_string().into()
             })?;
         server_statuses
             .iter()
-            .map(|ss| Self::get_from_raw_str(ss.as_str()))
+            .map(|ss| Self::get_from_raw_str(ss.as_str(), ctx))
             .collect()
     }
 
-    fn get_from_raw_str(key: &str) -> Result<Self, MinecraftServerError> {
-        let config: Config = Config::get_config();
-        let mut conn = connect(&config);
-        redis::cmd("GET").arg(key).query(&mut conn).map_err(|err| {
-            format!("Redis data for {:?} could not be retrieved: {:?}", key, err)
-                .to_string()
-                .into()
-        })
+    fn get_from_raw_str(key: &str, ctx: &mut ContextManager) -> Result<Self, MinecraftServerError> {
+        redis::cmd("GET")
+            .arg(key)
+            .query(ctx.get_connection())
+            .map_err(|err| {
+                format!("Redis data for {:?} could not be retrieved: {:?}", key, err)
+                    .to_string()
+                    .into()
+            })
     }
 
-    pub fn get(server_name: &String, region: &Region) -> Result<Self, MinecraftServerError> {
+    pub fn get(
+        server_name: &String,
+        region: &Region,
+        ctx: &mut ContextManager,
+    ) -> Result<Self, MinecraftServerError> {
         let key: String = format!(
             "serverstatus.minecraft.{}.{}",
             region.to_string(),
             server_name
         );
-        Self::get_from_raw_str(key.as_str())
+        Self::get_from_raw_str(key.as_str(), ctx)
     }
 }

@@ -4,7 +4,7 @@ use rand::Rng;
 use strum::IntoEnumIterator;
 
 use crate::{
-    error::parsing_error::ServerGroupParsingError, region::Region,
+    context_manager::ContextManager, error::parsing_error::ServerGroupParsingError, region::Region,
     server::server_group::ServerGroup,
 };
 
@@ -60,16 +60,18 @@ pub struct GameOptions {
     pub portal_top_corner_location: Option<String>,
 }
 
-impl TryFrom<GameType> for GameOptions {
-    type Error = ServerGroupParsingError;
-    fn try_from(game: GameType) -> Result<Self, Self::Error> {
-        let binding = Self::load_from_cache(&game);
+impl GameOptions {
+    pub fn from_game_type(
+        game: GameType,
+        ctx: &mut ContextManager,
+    ) -> Result<Self, ServerGroupParsingError> {
+        let binding = Self::load_from_cache(&game, ctx);
         let cached: Option<&ServerGroup> = binding.as_ref();
         if let Some(options) = CUSTOM_GAME_OPTIONS.get(&game) {
             // for custom game options
             if cached.is_none() {
                 let mut new = options.clone();
-                new.port_section = Self::rnd_port()?;
+                new.port_section = Self::rnd_port(ctx)?;
                 return Ok(new);
             }
         }
@@ -90,7 +92,7 @@ impl TryFrom<GameType> for GameOptions {
                 .filter(|x| !x.is_empty()),
             min_players,
             max_players,
-            port_section: cached.map_or(Self::rnd_port()?, |data| data.port_section), // makes unique
+            port_section: cached.map_or(Self::rnd_port(ctx)?, |data| data.port_section),
             arcade_group: cached.map_or(true, |data| data.arcade_group),
             world_zip: cached.map_or("arcade.zip".into(), |data| data.world_zip.clone()),
             plugin: cached.map_or("Arcade.jar".into(), |data| data.plugin.clone()),
@@ -155,9 +157,7 @@ impl TryFrom<GameType> for GameOptions {
                 .filter(|x| !x.is_empty()),
         })
     }
-}
 
-impl GameOptions {
     pub fn get_if_port_section_conflict(lhs: u16, rhs: u16) -> bool {
         //! Returns `true` if either left port section
         //! or right port section conflicts.
@@ -178,10 +178,10 @@ impl GameOptions {
             .any(|&cached_port| Self::get_if_port_section_conflict(port_section, cached_port))
     }
 
-    fn rnd_port() -> Result<u16, ServerGroupParsingError> {
+    fn rnd_port(ctx: &mut ContextManager) -> Result<u16, ServerGroupParsingError> {
         //! Returns non-conflicting port section
         let mut rng = rand::thread_rng();
-        let port_sections: Vec<u16> = ServerGroup::get_all_port_sections()?;
+        let port_sections: Vec<u16> = ServerGroup::get_all_port_sections(ctx)?;
         let mut port_section: u16 = rng.gen_range(25566..26001);
         while Self::check_port_section_conflicts(port_section, &port_sections)
         // port section conflict (either can be 10 above the other)
@@ -191,9 +191,9 @@ impl GameOptions {
         Ok(port_section)
     }
 
-    fn load_from_cache(game: &GameType) -> Option<ServerGroup> {
+    fn load_from_cache(game: &GameType, ctx: &mut ContextManager) -> Option<ServerGroup> {
         //! Loads from pre-existing ServerGroup cache
         let prefix = GAME_TO_SERVER_PREFIX.get(game).cloned()?;
-        ServerGroup::get_server_group(&format!("servergroups.{}", prefix)).ok()
+        ServerGroup::get_server_group(&format!("servergroups.{}", prefix), ctx).ok()
     }
 }
