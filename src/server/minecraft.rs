@@ -356,7 +356,7 @@ impl MinecraftServer {
                 "serverstatus.minecraft.{}.{}-*",
                 server_group.region, server_group.prefix
             ))
-            .query(ctx.get_connection())
+            .query(&mut ctx.get_connection())
             .map_err(|_| -> MinecraftServerError {
                 "Redis data for MinecraftServer could not be retrieved. MinecraftServer iteration failed."
                     .to_string().into()
@@ -398,7 +398,7 @@ impl MinecraftServer {
     pub fn get_all(ctx: &mut ContextManager) -> Result<Vec<Self>, MinecraftServerError> {
         let server_statuses: Vec<String> = redis::cmd("KEYS")
             .arg("serverstatus.minecraft.*.*")
-            .query(ctx.get_connection())
+            .query(&mut ctx.get_connection())
             .map_err(|_| -> MinecraftServerError {
                 "Redis data for MinecraftServer could not be retrieved. MinecraftServer iteration failed."
                     .to_string().into()
@@ -412,7 +412,7 @@ impl MinecraftServer {
     fn get_from_raw_str(key: &str, ctx: &mut ContextManager) -> Result<Self, MinecraftServerError> {
         redis::cmd("GET")
             .arg(key)
-            .query(ctx.get_connection())
+            .query(&mut ctx.get_connection())
             .map_err(|err| {
                 format!("Redis data for {:?} could not be retrieved: {:?}", key, err)
                     .to_string()

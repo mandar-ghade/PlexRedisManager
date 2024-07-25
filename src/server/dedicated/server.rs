@@ -20,9 +20,7 @@ pub struct DedicatedServer {
     #[serde(default = "ram_or_cpu_default")]
     pub max_ram: i16,
     #[serde(skip)]
-    pub server_count_map: HashMap<ServerGroup, i16>,
-    // perhaps just make it by ServerGroup name so
-    // conflicts will be reduced if changed
+    pub server_count_map: HashMap<String, i16>,
 }
 
 fn ram_or_cpu_default() -> i16 {
@@ -33,6 +31,8 @@ fn ram_or_cpu_default() -> i16 {
 pub enum DedicatedServerError {
     #[error("Dedicated Server Parsing Error: `{0}`")]
     ParsingError(String),
+    #[error("Dedicated Server Storage Error: `{0}`")]
+    StorageError(String),
 }
 
 impl Ord for DedicatedServer {
@@ -48,28 +48,43 @@ impl PartialOrd for DedicatedServer {
     }
 }
 
+impl DedicatedServerError {
+    pub fn parsing_error_from_str(msg: &str) -> Self {
+        Self::ParsingError(msg.into())
+    }
+
+    pub fn storage_error_from_str(msg: &str) -> Self {
+        Self::StorageError(msg.into())
+    }
+}
+
 impl DedicatedServer {
     fn get() -> Result<Vec<Self>, DedicatedServerError> {
         todo!()
     }
 
     pub fn get_server_count(&self, group: &ServerGroup) -> i16 {
-        self.server_count_map.get(group).unwrap_or(&0).clone()
+        self.server_count_map.get(&group.name).unwrap_or(&0).clone()
     }
 
-    fn increment_server_count(&mut self, group: &ServerGroup) -> () {
-        self.server_count_map.insert(
-            group.clone(),
-            self.server_count_map.get(group).unwrap_or(&(0 as i16)) + (1 as i16),
-        );
+    fn increment_server_count(&mut self, group: &ServerGroup) -> Result<(), DedicatedServerError> {
+        if !self.has_space_for(group) {
+            return Err(DedicatedServerError::ParsingError(format!(
+                "Dedicated Server ({:?}) has no space for server {:?} (try another dedicated server)",
+                self.name, group.name
+            )));
+        }
+        self.server_count_map
+            .insert(group.name.clone(), self.get_server_count(group) + 1);
         self.available_ram -= group.ram as i16;
         self.available_cpu -= group.cpu as i16;
+        Ok(())
     }
 
     fn decrement_server_count(&mut self, group: &ServerGroup) -> () {
-        if let Some(&count) = self.server_count_map.get(group) {
+        if let Some(&count) = self.server_count_map.get(&group.name) {
             self.server_count_map
-                .insert(group.clone(), if count <= 1 { 0 } else { count - 1 });
+                .insert(group.name.clone(), if count <= 1 { 0 } else { count - 1 });
             if count > 0 {
                 // if old count wasn't zero (so available cpu or ram don't exceed max)
                 self.available_ram += group.ram as i16;
@@ -78,8 +93,8 @@ impl DedicatedServer {
         }
     }
 
-    pub fn add_server(&mut self, group: &ServerGroup) -> () {
-        self.increment_server_count(group);
+    pub fn add_server(&mut self, group: &ServerGroup) -> Result<(), DedicatedServerError> {
+        self.increment_server_count(group)
     }
 
     pub fn remove_server(&mut self, group: &ServerGroup) -> () {

@@ -33,9 +33,10 @@ fn get_best_server_test(group: &ServerGroup, ctx: &mut ContextManager) -> () {
 
 fn main() {
     let mut ctx: ContextManager = ContextManager::new();
-    let game: Game = Game::from_game_type(GameType::MixedArcade, &mut ctx)
-        .expect("Could not convert from GameType to Game");
-    let mixed_arcade = ServerGroup::from_game(game);
-    dbg!(&mixed_arcade);
-    //get_best_server_test(&mixed_arcade, &mut ctx)
+    let mut lobby = GenericServer::Lobby
+        .to_server_group(&mut ctx)
+        .expect("Lobby expected.")
+        .expect("Should've been Some(Lobby)");
+    let _ = lobby.create(&mut ctx);
+    dbg!(lobby);
 }
