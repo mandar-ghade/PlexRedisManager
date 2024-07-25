@@ -36,19 +36,6 @@ impl DedicatedServers {
         best_server
     }
 
-    pub fn get_matching_dedicated_server(
-        &mut self,
-        dedicated: &DedicatedServer,
-    ) -> Option<&mut DedicatedServer> {
-        for srv in self.servers.iter_mut() {
-            if srv.name.ne(&dedicated.name) {
-                continue;
-            }
-            return Some(srv);
-        }
-        None
-    }
-
     pub fn get_next(&mut self) -> Option<DedicatedServer> {
         self.servers.clone().into_iter().next()
     }
