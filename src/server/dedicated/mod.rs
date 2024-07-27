@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 pub mod collection;
+pub mod instance;
 pub mod server;
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]

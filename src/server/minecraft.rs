@@ -15,14 +15,14 @@ pub enum MinecraftServerError {
     ParsingError(String),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 enum ServerMotd {
     GameMotd(GameInfo),
     Motd(String),
 }
 
 #[allow(non_camel_case_types)]
-#[derive(Clone, EnumString, Debug)]
+#[derive(Clone, EnumString, Eq, Debug, PartialEq)]
 enum GameDisplayStatus {
     ALWAYS_OPEN,
     STARTING,
@@ -33,14 +33,14 @@ enum GameDisplayStatus {
 }
 
 #[allow(non_camel_case_types)]
-#[derive(Clone, EnumString, Debug)]
+#[derive(Clone, EnumString, Eq, Debug, PartialEq)]
 enum GameJoinStatus {
     OPEN,
     RANKS_ONLY,
     CLOSED,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 struct GameInfo {
     game: GameType,
     mode: Option<String>,
@@ -232,10 +232,10 @@ impl GameInfo {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct MinecraftServer {
     name: String,
-    group: ServerGroup,
+    group: String,
     motd: ServerMotd,
     player_count: u8,
     max_player_count: u8,
@@ -262,20 +262,6 @@ fn parse_datetime(
     todo!()
 }
 
-fn parse_server_group(
-    map: &serde_json::Map<String, serde_json::Value>,
-    key: &str,
-    ctx: &mut ContextManager,
-) -> Result<ServerGroup, MinecraftServerError> {
-    ServerGroup::from_str(parse_string_from_map(map, key)?.as_str(), ctx).map_err(|err| {
-        format!(
-            "Field `{}` could not be parsed to ServerGroup: {:?}",
-            key, err
-        )
-        .into()
-    })
-}
-
 fn parse_json_motd(
     map: &serde_json::Map<String, serde_json::Value>,
     key: &str,
@@ -300,10 +286,9 @@ impl TryFrom<serde_json::Value> for MinecraftServer {
     type Error = MinecraftServerError;
     fn try_from(map: serde_json::Value) -> Result<Self, Self::Error> {
         let map: serde_json::Map<String, serde_json::Value> = json_to_map(&map)?;
-        let mut ctx: ContextManager = ContextManager::new(); // special case
         Ok(Self {
             name: parse_string_from_map(&map, "_name")?,
-            group: parse_server_group(&map, "_group", &mut ctx)?,
+            group: parse_string_from_map(&map, "_group")?,
             motd: parse_json_motd(&map, "_motd")?,
             player_count: parse_u8_from_map(&map, "_playerCount")?,
             max_player_count: parse_u8_from_map(&map, "_maxPlayerCount")?,
@@ -346,7 +331,22 @@ impl FromRedisValue for MinecraftServer {
     }
 }
 
+#[allow(non_camel_case_types)]
+#[derive(Debug)]
+pub enum ServerStatus {
+    ONLINE,
+    OFFLINE,
+    DOES_NOT_EXIST,
+    GROUP_NOT_FOUND,
+    INSTANCE_NOT_FOUND,
+}
+
 impl MinecraftServer {
+    fn get_server_group(&self, ctx: &mut ContextManager) -> Option<ServerGroup> {
+        let key: String = format!("servergroups.{}", self.group);
+        ServerGroup::from_str(key.as_str(), ctx).ok()
+    }
+
     pub fn from_server_group(
         server_group: &ServerGroup,
         ctx: &mut ContextManager,
@@ -365,6 +365,34 @@ impl MinecraftServer {
             .iter()
             .map(|sg| Self::get_from_raw_str(sg.as_str(), ctx))
             .collect()
+    }
+
+    fn is_online(&self) -> bool {
+        //! Checks whether the current timestamp in milliseconds
+        //! falls between 5 seconds of `self.current_time`
+        let now = Local::now().timestamp_millis() as u64;
+        let seconds = 5; // 5 * 2 = 10 seconds (happened just 5-10 seconds ago)
+        let interval = seconds * 1000; // in milliseconds
+        let seconds_before_curr = self.current_time - interval;
+        let seconds_after_curr = self.current_time + interval;
+        seconds_before_curr <= now && now <= seconds_after_curr
+    }
+
+    /// Gets current ServerStatus
+    /// Updates `self` if it is online.
+    /// If offline, please do not use it (delete it from vec or whatever).
+    pub fn update(&mut self, ctx: &mut ContextManager) -> ServerStatus {
+        let Some(group) = self.get_server_group(ctx) else {
+            return ServerStatus::GROUP_NOT_FOUND;
+        };
+        let Ok(server) = Self::get(&self.name, &group.region, ctx) else {
+            return ServerStatus::INSTANCE_NOT_FOUND;
+        };
+        if self.current_time == server.current_time && !self.is_online() {
+            return ServerStatus::OFFLINE;
+        }
+        *self = server;
+        ServerStatus::ONLINE
     }
 
     fn get_uptime_as_seconds(&self) -> i64 {
@@ -391,7 +419,7 @@ impl MinecraftServer {
     pub fn get_empty_servers(ctx: &mut ContextManager) -> Result<Vec<Self>, MinecraftServerError> {
         Ok(Self::get_all(ctx)?
             .into_iter()
-            .filter(|sv| sv.is_empty() && sv.get_uptime_as_seconds() >= 150) // offline
+            .filter(|sv| sv.is_dead_server()) // offline
             .collect())
     }
 

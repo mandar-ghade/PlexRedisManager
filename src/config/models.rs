@@ -72,7 +72,7 @@ impl Default for Config {
 fn dedicated_server_with_defaults(ds: &mut DedicatedServer) -> DedicatedServer {
     ds.max_ram = ds.available_ram;
     ds.max_cpu = ds.available_cpu;
-    ds.server_count_map = HashMap::new();
+    ds.server_instances = HashMap::new();
     ds.clone()
 }
 

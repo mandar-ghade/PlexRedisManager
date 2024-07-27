@@ -11,6 +11,8 @@ use crate::game::Game;
 use crate::region::Region;
 use std::collections::HashMap;
 
+use super::minecraft::MinecraftServer;
+
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct ServerGroup {
     pub name: String,

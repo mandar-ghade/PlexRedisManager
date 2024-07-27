@@ -2,7 +2,7 @@ use std::usize;
 
 use serde::{Deserialize, Serialize};
 
-use crate::server::server_group::ServerGroup;
+use crate::server::{minecraft::MinecraftServer, server_group::ServerGroup};
 
 use super::server::DedicatedServer;
 
@@ -34,6 +34,31 @@ impl DedicatedServers {
             best_server = Some(ds);
         }
         best_server
+    }
+
+    pub fn get_running_servers(&mut self) -> Vec<MinecraftServer> {
+        //! Get running minecraft servers across all nodes
+        todo!()
+    }
+
+    fn get_highest_server_num(&self, group: &ServerGroup) -> usize {
+        self.servers
+            .iter()
+            .map(|ds| {
+                ds.server_instances
+                    .get(&group.name)
+                    .unwrap_or(&Vec::new())
+                    .iter()
+                    .map(|mcs| mcs.get_server_num())
+                    .max()
+                    .unwrap_or(0)
+            })
+            .max()
+            .unwrap_or(0)
+    }
+
+    pub fn get_next_server_num(&self, group: &ServerGroup) -> usize {
+        self.get_highest_server_num(group) + 1
     }
 
     pub fn get_next(&mut self) -> Option<DedicatedServer> {
